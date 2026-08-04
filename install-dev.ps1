@@ -126,7 +126,11 @@ function Prompt-Menu {
 function Simulate-Check {
     param([string]$Name, [bool]$Found = $true, [string]$Version = "")
     if ($Found) {
-        Write-Success "$Name found" + ($Version ? ": $Version" : "")
+        if ($Version) {
+            Write-Success "$Name found: $Version"
+        } else {
+            Write-Success "$Name found"
+        }
     } else {
         Write-Warning "$Name not found"
     }

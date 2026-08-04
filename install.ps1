@@ -329,9 +329,11 @@ if ($opencodeToken -or $kiloToken) {
         New-Item -ItemType Directory -Path $codejetDir -Force | Out-Null
     }
     
+    $kiloValue = if ($kiloToken) { $kiloToken } else { "" }
+    $opencodeValue = if ($opencodeToken) { $opencodeToken } else { "" }
     $keys = @{
-        kilo_token = $kiloToken ?? ""
-        opencode_token = $opencodeToken ?? ""
+        kilo_token = $kiloValue
+        opencode_token = $opencodeValue
     } | ConvertTo-Json -Depth 3
     
     Set-Content -Path $keysPath -Value $keys -Encoding UTF8
