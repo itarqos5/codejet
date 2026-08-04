@@ -112,6 +112,25 @@ function StreamingMessage({ content, model }: { content: string; model: string }
   );
 }
 
+function renderMessage(msg: ChatMessage) {
+  switch (msg.role) {
+    case "user":
+      return <UserMessage key={msg.id} message={msg} />;
+    case "assistant":
+      return <AssistantMessage key={msg.id} message={msg} />;
+    case "system":
+      return <SystemMessage key={msg.id} message={msg} />;
+    case "tool-call":
+      return <ToolCallDisplay key={msg.id} message={msg} />;
+    case "tool-result":
+      return <ToolResultDisplay key={msg.id} message={msg} />;
+    case "file-change":
+      return <FileChangeDisplay key={msg.id} message={msg} />;
+    default:
+      return null;
+  }
+}
+
 export function ChatArea({
   messages,
   streaming,
@@ -131,28 +150,12 @@ export function ChatArea({
     scrollRef.current = messages.length;
   }, [messages.length]);
 
+  // Always show the latest messages that fit
   const visibleMessages = messages.slice(-maxHeight);
 
   return (
     <Box flexDirection="column" overflow="hidden" flexGrow={1}>
-      {visibleMessages.map((msg) => {
-        switch (msg.role) {
-          case "user":
-            return <UserMessage key={msg.id} message={msg} />;
-          case "assistant":
-            return <AssistantMessage key={msg.id} message={msg} />;
-          case "system":
-            return <SystemMessage key={msg.id} message={msg} />;
-          case "tool-call":
-            return <ToolCallDisplay key={msg.id} message={msg} />;
-          case "tool-result":
-            return <ToolResultDisplay key={msg.id} message={msg} />;
-          case "file-change":
-            return <FileChangeDisplay key={msg.id} message={msg} />;
-          default:
-            return null;
-        }
-      })}
+      {visibleMessages.map((msg) => renderMessage(msg))}
       {streaming && <StreamingMessage content={streamingContent} model={modelName} />}
       {messages.length === 0 && !streaming && (
         <Box justifyContent="center" paddingTop={2}>

@@ -1,4 +1,4 @@
-import { spawn, type ChildProcess } from "node:child_process";
+import { spawn, execSync, type ChildProcess } from "node:child_process";
 
 const OPENCODE_PORT = 4096;
 const OPENCODE_HOST = "127.0.0.1";
@@ -25,6 +25,26 @@ async function pingServer(): Promise<boolean> {
   }
 }
 
+function killPortProcess(): void {
+  try {
+    if (process.platform === "win32") {
+      const output = execSync(`netstat -ano | findstr :${OPENCODE_PORT}`, {
+        encoding: "utf-8",
+        timeout: 3000,
+      });
+      const lines = output.split("\n").filter((l) => l.includes("LISTENING"));
+      for (const line of lines) {
+        const pid = line.trim().split(/\s+/).pop();
+        if (pid && pid !== "0") {
+          try { execSync(`taskkill /F /PID ${pid}`, { timeout: 3000 }); } catch {}
+        }
+      }
+    } else {
+      try { execSync(`lsof -ti:${OPENCODE_PORT} | xargs kill -9`, { timeout: 3000 }); } catch {}
+    }
+  } catch {}
+}
+
 export async function waitForServer(timeoutMs = 15000): Promise<boolean> {
   if (serverReady && await pingServer()) return true;
 
@@ -41,8 +61,13 @@ export async function waitForServer(timeoutMs = 15000): Promise<boolean> {
   return false;
 }
 
-export function startServer(): void {
-  if (serverProcess) return;
+export async function startServer(): Promise<boolean> {
+  if (serverProcess && serverReady) {
+    if (await pingServer()) return true;
+  }
+
+  killPortProcess();
+  await new Promise((r) => setTimeout(r, 500));
 
   try {
     serverProcess = spawn("opencode", ["serve", "--port", String(OPENCODE_PORT), "--hostname", OPENCODE_HOST], {
@@ -63,7 +88,10 @@ export function startServer(): void {
   } catch {
     serverProcess = null;
     serverReady = false;
+    return false;
   }
+
+  return waitForServer(12000);
 }
 
 export function stopServer(): void {

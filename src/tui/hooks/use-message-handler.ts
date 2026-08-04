@@ -67,9 +67,14 @@ export function useMessageHandler({
   async function handleOpenCodeMessage(content: string) {
     const ocServer = await import("../../api/opencode-server.js");
 
-    const ready = await ocServer.waitForServer(10000);
-    if (!ready) {
-      throw new Error("OpenCode server not reachable. Make sure 'opencode' is installed and try again.");
+    if (!ocServer.isServerReady()) {
+      const ready = await ocServer.waitForServer(5000);
+      if (!ready) {
+        throw new Error(
+          "OpenCode server is not running. " +
+          "Try restarting codejet, or switch to a KiloCode model (Ctrl+P → Switch Model)."
+        );
+      }
     }
 
     const oc = await import("../../api/opencode.js");

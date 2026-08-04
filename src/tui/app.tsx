@@ -23,22 +23,29 @@ export default function App() {
   const [fileNotifications, setFileNotifications] = useState<
     { filePath: string; action: "created" | "modified" | "deleted" }[]
   >([]);
+  const [, setResizeTick] = useState(0);
 
   const currentModel = getModelById(state.modelId);
   const sessionErrors = useRef<{ timestamp: number; model: string; message: string }[]>([]);
 
-  // Start OpenCode server on mount
+  // Force re-render on terminal resize
   useEffect(() => {
-    import("../api/opencode-server.js").then((mod) => {
-      mod.startServer();
-      mod.waitForServer(10000).then((ready) => {
-        dispatch({ type: "SET_OPENCODE_READY", ready });
-      });
-    }).catch(() => {});
+    const onResize = () => setResizeTick((t) => t + 1);
+    process.stdout.on("resize", onResize);
+    return () => { process.stdout.off("resize", onResize); };
   }, []);
 
-  // Check for updates on mount
+  // Startup: OpenCode server + Kilo ping + update check
   useEffect(() => {
+    // 1. Start OpenCode server
+    import("../api/opencode-server.js").then(async (mod) => {
+      const ok = await mod.startServer();
+      dispatch({ type: "SET_OPENCODE_READY", ready: ok });
+    }).catch(() => {
+      dispatch({ type: "SET_OPENCODE_READY", ready: false });
+    });
+
+    // 2. Check for updates
     import("../api/updater.js").then((mod) => {
       mod.checkForUpdate().then((info) => {
         if (info) {

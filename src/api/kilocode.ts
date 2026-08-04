@@ -213,3 +213,19 @@ export async function listProviders(): Promise<ProviderInfo[]> {
 export async function fimCompletions(req: FIMRequest): Promise<FIMResponse> {
   return api<FIMResponse>("POST", "/fim/completions", req);
 }
+
+// Health check
+
+export async function pingKiloApi(): Promise<boolean> {
+  try {
+    const keys = loadKeys();
+    if (!keys.kilo_token) return false;
+    const res = await fetch(`${BASE_URL}/models`, {
+      headers: authHeaders(),
+      signal: AbortSignal.timeout(5000),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
