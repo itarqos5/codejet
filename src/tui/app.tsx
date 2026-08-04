@@ -8,7 +8,9 @@ import { CommandModal, ModelSelector, buildModelItems } from "./components/modal
 import { TodoPanel } from "./components/todo.js";
 import { QuestionPrompt } from "./components/question.js";
 import { FileNotification } from "./components/file-notification.js";
-import { appReducer, INITIAL_STATE, type ChatMessage } from "./state.js";
+import { UpdateToast } from "./components/update-toast.js";
+import { UpdateModal } from "./components/update-modal.js";
+import { appReducer, INITIAL_STATE, type ChatMessage, type FileChange } from "./state.js";
 import { getModelById, getModelProvider } from "./models.js";
 import { loadKeys } from "../api/keys.js";
 
@@ -37,8 +39,45 @@ export default function App() {
     }).catch(() => {});
   }, []);
 
+  // Check for updates on mount
+  useEffect(() => {
+    import("../api/updater.js").then((mod) => {
+      mod.checkForUpdate().then((info) => {
+        if (info) {
+          dispatch({ type: "SET_UPDATE_AVAILABLE", version: info.version });
+        }
+      });
+    }).catch(() => {});
+  }, []);
+
   // Keyboard shortcuts
   useInput((input, key) => {
+    // Update flow - Enter to install/update, Esc to dismiss
+    if (state.updateAvailable && state.updatePhase === "idle") {
+      if (key.return) {
+        dispatch({ type: "SET_UPDATE_PHASE", phase: "installing" });
+        import("../api/updater.js").then((mod) => {
+          mod.installUpdate((line) => {
+            dispatch({ type: "SET_UPDATE_PHASE", phase: "installing", log: line });
+          }).then((ok) => {
+            dispatch({ type: "SET_UPDATE_PHASE", phase: ok ? "done" : "error" });
+          });
+        });
+        return;
+      }
+      if (key.escape) {
+        dispatch({ type: "SET_UPDATE_AVAILABLE", version: null });
+        dispatch({ type: "SET_UPDATE_PHASE", phase: "idle" });
+        return;
+      }
+    }
+    if (state.updatePhase === "done") {
+      if (key.return) {
+        import("../api/updater.js").then((mod) => mod.restartApp());
+        return;
+      }
+    }
+
     // Ctrl+P - toggle command palette
     if (key.ctrl && input === "p") {
       if (state.pendingQuestion) return;
@@ -72,8 +111,11 @@ export default function App() {
       } else if (key.downArrow) {
         setModalIndex((prev) => Math.min(4, prev + 1));
       } else if (key.return) {
-        handleCommandAction(["new", "model", "compact", "todos", "clear"][modalIndex]);
-        setModalMode("none");
+        const action = ["new", "model", "compact", "todos", "clear"][modalIndex];
+        handleCommandAction(action);
+        if (action !== "model") {
+          setModalMode("none");
+        }
       }
       return;
     }
@@ -273,6 +315,8 @@ export default function App() {
 
     const reader = stream.getReader();
     let fullContent = "";
+    const toolCalls: string[] = [];
+    const fileChanges: FileChange[] = [];
 
     while (true) {
       const { done, value } = await reader.read();
@@ -285,6 +329,9 @@ export default function App() {
       }
       if (delta?.tool_calls) {
         for (const tc of delta.tool_calls) {
+          if (tc.function?.name) {
+            toolCalls.push(tc.function.name);
+          }
           if (tc.function?.name === "ask") {
             try {
               const args = JSON.parse(tc.function.arguments);
@@ -309,6 +356,7 @@ export default function App() {
                 ...prev,
                 { filePath: args.path, action: "created" as const },
               ]);
+              fileChanges.push({ path: args.path, added: args.content?.split("\n").length ?? 0, removed: 0 });
             } catch {}
           }
         }
@@ -322,6 +370,8 @@ export default function App() {
         content: fullContent,
         timestamp: Date.now(),
         modelName: currentModel?.name,
+        toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
+        fileChanges: fileChanges.length > 0 ? fileChanges : undefined,
       };
       dispatch({ type: "ADD_MESSAGE", message: assistantMsg });
 
@@ -376,6 +426,18 @@ export default function App() {
         </>
       ) : (
         <>
+          {state.updateAvailable && state.updatePhase === "idle" && (
+            <UpdateToast version={state.updateAvailable} highlighted={true} />
+          )}
+          {(state.updatePhase === "installing" || state.updatePhase === "done" || state.updatePhase === "error") && (
+            <UpdateModal
+              visible={true}
+              phase={state.updatePhase === "installing" ? "Installing..." : state.updatePhase === "done" ? "Done!" : "Error during install"}
+              logLines={state.updateLog}
+              completed={state.updatePhase === "done"}
+            />
+          )}
+
           {/* Header - ASCII art + model + mode badge */}
           <Header model={currentModel?.name ?? state.modelId} mode={state.mode} />
 
@@ -415,6 +477,7 @@ export default function App() {
 
               <InputBox
                 mode={state.mode}
+                modelName={currentModel?.name ?? state.modelId}
                 onSubmit={handleSendMessage}
                 disabled={state.streaming || !!state.pendingQuestion}
               />

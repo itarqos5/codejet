@@ -5,10 +5,12 @@ import type { AppMode } from "../state.js";
 
 export function InputBox({
   mode,
+  modelName,
   onSubmit,
   disabled,
 }: {
   mode: AppMode;
+  modelName: string;
   onSubmit: (value: string) => void;
   disabled: boolean;
 }) {
@@ -21,6 +23,9 @@ export function InputBox({
       paddingX={1}
       flexDirection="column"
     >
+      <Text color="gray" dimColor>
+        {modelName}
+      </Text>
       <Box gap={1}>
         <Text color={borderColor} bold>
           ▸

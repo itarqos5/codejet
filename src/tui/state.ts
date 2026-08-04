@@ -3,6 +3,12 @@ import type { ModelProvider } from "./models.js";
 
 export type AppMode = "build" | "plan";
 
+export interface FileChange {
+  path: string;
+  added: number;
+  removed: number;
+}
+
 export interface ChatMessage {
   id: string;
   role: "user" | "assistant" | "system" | "tool-call" | "tool-result" | "file-change";
@@ -11,6 +17,8 @@ export interface ChatMessage {
   modelName?: string;
   filePath?: string;
   fileAction?: "created" | "modified" | "deleted";
+  toolCalls?: string[];
+  fileChanges?: FileChange[];
 }
 
 export interface PendingQuestion {
@@ -19,6 +27,8 @@ export interface PendingQuestion {
   options?: string[];
   resolve: (answer: string) => void;
 }
+
+export type UpdatePhase = "idle" | "checking" | "installing" | "done" | "error";
 
 export interface AppState {
   messages: ChatMessage[];
@@ -36,6 +46,9 @@ export interface AppState {
   contextTokensUsed: number;
   contextTokensMax: number;
   error: string | null;
+  updateAvailable: string | null;
+  updatePhase: UpdatePhase;
+  updateLog: string[];
 }
 
 export type AppAction =
@@ -52,6 +65,8 @@ export type AppAction =
   | { type: "SET_INPUT_FOCUSED"; focused: boolean }
   | { type: "SET_CONTEXT_TOKENS"; used: number; max: number }
   | { type: "SET_ERROR"; error: string | null }
+  | { type: "SET_UPDATE_AVAILABLE"; version: string | null }
+  | { type: "SET_UPDATE_PHASE"; phase: UpdatePhase; log?: string }
   | { type: "CLEAR_MESSAGES" };
 
 export function appReducer(state: AppState, action: AppAction): AppState {
@@ -82,6 +97,14 @@ export function appReducer(state: AppState, action: AppAction): AppState {
       return { ...state, contextTokensUsed: action.used, contextTokensMax: action.max };
     case "SET_ERROR":
       return { ...state, error: action.error };
+    case "SET_UPDATE_AVAILABLE":
+      return { ...state, updateAvailable: action.version };
+    case "SET_UPDATE_PHASE":
+      return {
+        ...state,
+        updatePhase: action.phase,
+        updateLog: action.log ? [...state.updateLog, action.log] : state.updateLog,
+      };
     case "CLEAR_MESSAGES":
       return { ...state, messages: [], streamingContent: "", contextTokensUsed: 0 };
     default:
@@ -92,7 +115,7 @@ export function appReducer(state: AppState, action: AppAction): AppState {
 export const INITIAL_STATE: AppState = {
   messages: [],
   mode: "build",
-  modelId: "opencode/big-pickle",
+  modelId: "opencode/deepseek-v4-flash-free",
   provider: "opencode",
   opencodeReady: false,
   streaming: false,
@@ -105,4 +128,7 @@ export const INITIAL_STATE: AppState = {
   contextTokensUsed: 0,
   contextTokensMax: 131072,
   error: null,
+  updateAvailable: null,
+  updatePhase: "idle",
+  updateLog: [],
 };

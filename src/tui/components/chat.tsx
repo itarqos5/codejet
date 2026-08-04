@@ -1,6 +1,6 @@
 import React, { useRef, useEffect } from "react";
 import { Box, Text } from "ink";
-import type { ChatMessage } from "../state.js";
+import type { ChatMessage, FileChange } from "../state.js";
 
 function ToolCallDisplay({ message }: { message: ChatMessage }) {
   return (
@@ -63,6 +63,26 @@ function AssistantMessage({ message }: { message: ChatMessage }) {
         {message.modelName ?? "assistant"}
       </Text>
       <Text>{message.content}</Text>
+      {message.fileChanges && message.fileChanges.length > 0 && (
+        <Box flexDirection="column" paddingTop={1}>
+          {message.fileChanges.map((fc, i) => (
+            <Box key={i} gap={1}>
+              {fc.added > 0 && <Text color="green">+{fc.added}</Text>}
+              {fc.removed > 0 && <Text color="red">-{fc.removed}</Text>}
+              <Text color="gray">{fc.path}</Text>
+            </Box>
+          ))}
+        </Box>
+      )}
+      {message.toolCalls && message.toolCalls.length > 0 && (
+        <Box flexDirection="column" paddingTop={1}>
+          {message.toolCalls.map((tool, i) => (
+            <Text key={i} color="gray" dimColor>
+              Model ran tool: {tool}
+            </Text>
+          ))}
+        </Box>
+      )}
     </Box>
   );
 }
