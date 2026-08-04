@@ -181,6 +181,29 @@ export async function abortSession(id: string): Promise<boolean> {
   return request<boolean>("POST", `/session/${id}/abort`);
 }
 
+// Tools
+
+export interface ToolInfo {
+  name: string;
+  description: string;
+  parameters: Record<string, unknown>;
+}
+
+export async function listToolIds(): Promise<string[]> {
+  return request<string[]>("GET", "/experimental/tool/ids");
+}
+
+export async function listTools(
+  provider?: string,
+  model?: string,
+): Promise<ToolInfo[]> {
+  const params = new URLSearchParams();
+  if (provider) params.set("provider", provider);
+  if (model) params.set("model", model);
+  const query = params.toString() ? `?${params}` : "";
+  return request<ToolInfo[]>("GET", `/experimental/tool${query}`);
+}
+
 // ── Authenticated fetch helper ──────────────────────────────
 
 export function createAuthenticatedFetch(): typeof fetch {

@@ -35,9 +35,19 @@ async function api<T>(
 
 export interface ChatMessage {
   role: "system" | "user" | "assistant" | "tool";
-  content: string;
+  content: string | null;
   name?: string;
   tool_call_id?: string;
+  tool_calls?: ToolCall[];
+}
+
+export interface ToolCall {
+  id: string;
+  type: "function";
+  function: {
+    name: string;
+    arguments: string;
+  };
 }
 
 export interface ChatCompletionRequest {
@@ -85,7 +95,7 @@ export interface ChatCompletionChunk {
   model: string;
   choices: {
     index: number;
-    delta: Partial<ChatMessage>;
+    delta: Partial<ChatMessage> & { tool_calls?: ToolCall[] };
     finish_reason: string | null;
   }[];
   usage?: {
