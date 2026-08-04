@@ -2,6 +2,7 @@ import { useCallback, useRef } from "react";
 import { getModelById, getModelProvider } from "../models.js";
 import { loadKeys } from "../../api/keys.js";
 import type { AppState, ChatMessage, FileChange } from "../state.js";
+import type { SessionError } from "../../api/logger.js";
 
 function genId(): string {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
@@ -10,8 +11,9 @@ function genId(): string {
 export interface MessageHandlerDeps {
   state: AppState;
   dispatch: React.Dispatch<any>;
-  sessionErrors: React.MutableRefObject<{ timestamp: number; model: string; message: string }[]>;
+  sessionErrors: React.MutableRefObject<SessionError[]>;
   setFileNotifications: React.Dispatch<React.SetStateAction<{ filePath: string; action: "created" | "modified" | "deleted" }[]>>;
+  abortControllerRef: React.MutableRefObject<AbortController | null>;
 }
 
 export function useMessageHandler({
@@ -19,6 +21,7 @@ export function useMessageHandler({
   dispatch,
   sessionErrors,
   setFileNotifications,
+  abortControllerRef,
 }: MessageHandlerDeps) {
   const currentModel = getModelById(state.modelId);
 
@@ -34,21 +37,27 @@ export function useMessageHandler({
       dispatch({ type: "SET_STREAMING", streaming: true });
       dispatch({ type: "SET_STREAMING_CONTENT", content: "" });
 
+      const controller = new AbortController();
+      abortControllerRef.current = controller;
+
       try {
         const provider = getModelProvider(state.modelId);
 
         if (provider === "opencode") {
-          await handleOpenCodeMessage(content);
+          await handleOpenCodeMessage(content, controller.signal);
         } else {
-          await handleKiloMessage(content);
+          await handleKiloMessage(content, controller.signal);
         }
       } catch (err) {
+        if (controller.signal.aborted) return;
         const errorMsg = err instanceof Error ? err.message : String(err);
+        const provider = getModelProvider(state.modelId);
         dispatch({ type: "SET_ERROR", error: errorMsg });
         sessionErrors.current.push({
           timestamp: Date.now(),
           model: currentModel?.name ?? state.modelId,
           message: errorMsg,
+          type: provider,
         });
         const errChatMsg: ChatMessage = {
           id: genId(),
@@ -58,21 +67,32 @@ export function useMessageHandler({
         };
         dispatch({ type: "ADD_MESSAGE", message: errChatMsg });
       } finally {
+        abortControllerRef.current = null;
         dispatch({ type: "SET_STREAMING", streaming: false });
       }
     },
     [state.modelId, state.messages, state.contextTokensUsed, currentModel],
   );
 
-  async function handleOpenCodeMessage(content: string) {
+  const abortStream = useCallback(() => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+  }, [abortControllerRef]);
+
+  async function handleOpenCodeMessage(content: string, signal: AbortSignal) {
     const ocServer = await import("../../api/opencode-server.js");
 
     if (!ocServer.isServerReady()) {
       const ready = await ocServer.waitForServer(5000);
       if (!ready) {
+        const serverErr = ocServer.getLastError();
+        const detail = serverErr ? `\nDetails: ${serverErr}` : "";
         throw new Error(
           "OpenCode server is not running. " +
-          "Try restarting codejet, or switch to a KiloCode model (Ctrl+P → Switch Model)."
+          "Try restarting codejet, or switch to a KiloCode model (Ctrl+P → Switch Model)." +
+          detail
         );
       }
     }
@@ -85,7 +105,14 @@ export function useMessageHandler({
     ];
 
     const ocModel = state.modelId.replace("opencode/", "");
-    const response = await oc.sendMessage(session.id, parts, { model: ocModel });
+
+    const responsePromise = oc.sendMessage(session.id, parts, { model: ocModel });
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      const id = setTimeout(() => reject(new Error("OpenCode request timed out after 120s")), 120_000);
+      signal.addEventListener("abort", () => { clearTimeout(id); reject(new Error("Aborted")); }, { once: true });
+    });
+
+    const response = await Promise.race([responsePromise, timeoutPromise]);
 
     let fullContent = "";
     for (const part of response.parts) {
@@ -116,7 +143,7 @@ export function useMessageHandler({
     }
   }
 
-  async function handleKiloMessage(content: string) {
+  async function handleKiloMessage(content: string, signal: AbortSignal) {
     const keys = loadKeys();
 
     if (!keys.kilo_token) {
@@ -184,50 +211,63 @@ export function useMessageHandler({
     let fullContent = "";
     const toolCalls: string[] = [];
     const fileChanges: FileChange[] = [];
+    const CHUNK_TIMEOUT_MS = 30_000;
 
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
+    try {
+      while (true) {
+        if (signal.aborted) break;
 
-      const delta = value.choices?.[0]?.delta;
-      if (delta?.content) {
-        fullContent += delta.content;
-        dispatch({ type: "SET_STREAMING_CONTENT", content: fullContent });
-      }
-      if (delta?.tool_calls) {
-        for (const tc of delta.tool_calls) {
-          if (tc.function?.name) {
-            toolCalls.push(tc.function.name);
-          }
-          if (tc.function?.name === "ask") {
-            try {
-              const args = JSON.parse(tc.function.arguments);
-              const answer = await new Promise<string>((resolve) => {
-                dispatch({
-                  type: "SET_PENDING_QUESTION",
-                  question: {
-                    id: genId(),
-                    question: args.question,
-                    options: args.options,
-                    resolve,
-                  },
+        const chunkPromise = reader.read();
+        const timeoutPromise = new Promise<never>((_, reject) => {
+          const id = setTimeout(() => reject(new Error("Stream timed out (no chunk received for 30s)")), CHUNK_TIMEOUT_MS);
+          signal.addEventListener("abort", () => { clearTimeout(id); reject(new Error("Aborted")); }, { once: true });
+        });
+
+        const { done, value } = await Promise.race([chunkPromise, timeoutPromise]);
+        if (done) break;
+
+        const delta = value.choices?.[0]?.delta;
+        if (delta?.content) {
+          fullContent += delta.content;
+          dispatch({ type: "SET_STREAMING_CONTENT", content: fullContent });
+        }
+        if (delta?.tool_calls) {
+          for (const tc of delta.tool_calls) {
+            if (tc.function?.name) {
+              toolCalls.push(tc.function.name);
+            }
+            if (tc.function?.name === "ask") {
+              try {
+                const args = JSON.parse(tc.function.arguments);
+                const answer = await new Promise<string>((resolve) => {
+                  dispatch({
+                    type: "SET_PENDING_QUESTION",
+                    question: {
+                      id: genId(),
+                      question: args.question,
+                      options: args.options,
+                      resolve,
+                    },
+                  });
                 });
-              });
-              dispatch({ type: "SET_PENDING_QUESTION", question: null });
-            } catch {}
-          }
-          if (tc.function?.name === "write_file") {
-            try {
-              const args = JSON.parse(tc.function.arguments);
-              setFileNotifications((prev) => [
-                ...prev,
-                { filePath: args.path, action: "created" as const },
-              ]);
-              fileChanges.push({ path: args.path, added: args.content?.split("\n").length ?? 0, removed: 0 });
-            } catch {}
+                dispatch({ type: "SET_PENDING_QUESTION", question: null });
+              } catch {}
+            }
+            if (tc.function?.name === "write_file") {
+              try {
+                const args = JSON.parse(tc.function.arguments);
+                setFileNotifications((prev) => [
+                  ...prev,
+                  { filePath: args.path, action: "created" as const },
+                ]);
+                fileChanges.push({ path: args.path, added: args.content?.split("\n").length ?? 0, removed: 0 });
+              } catch {}
+            }
           }
         }
       }
+    } finally {
+      reader.cancel().catch(() => {});
     }
 
     if (fullContent) {
@@ -251,5 +291,5 @@ export function useMessageHandler({
     }
   }
 
-  return { handleSendMessage };
+  return { handleSendMessage, abortStream };
 }

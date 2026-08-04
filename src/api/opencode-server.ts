@@ -5,6 +5,7 @@ const OPENCODE_HOST = "127.0.0.1";
 
 let serverProcess: ChildProcess | null = null;
 let serverReady = false;
+let lastError: string | null = null;
 
 export function getOpenCodeBaseUrl(): string {
   return `http://${OPENCODE_HOST}:${OPENCODE_PORT}`;
@@ -12,6 +13,10 @@ export function getOpenCodeBaseUrl(): string {
 
 export function isServerReady(): boolean {
   return serverReady;
+}
+
+export function getLastError(): string | null {
+  return lastError;
 }
 
 async function pingServer(): Promise<boolean> {
@@ -52,6 +57,7 @@ export async function waitForServer(timeoutMs = 15000): Promise<boolean> {
   while (Date.now() < deadline) {
     if (await pingServer()) {
       serverReady = true;
+      lastError = null;
       return true;
     }
     await new Promise((r) => setTimeout(r, 500));
@@ -76,16 +82,29 @@ export async function startServer(): Promise<boolean> {
       windowsHide: true,
     });
 
-    serverProcess.on("error", () => {
+    let stderrOutput = "";
+    serverProcess.stderr?.on("data", (chunk: Buffer) => {
+      stderrOutput += chunk.toString();
+    });
+
+    serverProcess.on("error", (err) => {
+      lastError = `Failed to start opencode: ${err.message}`;
       serverProcess = null;
       serverReady = false;
     });
 
-    serverProcess.on("exit", () => {
+    serverProcess.on("exit", (code, signal) => {
+      if (!serverReady) {
+        lastError = `opencode exited before ready (code=${code}, signal=${signal})`;
+        if (stderrOutput) {
+          lastError += `\nStderr: ${stderrOutput.slice(0, 500)}`;
+        }
+      }
       serverProcess = null;
       serverReady = false;
     });
-  } catch {
+  } catch (err) {
+    lastError = `Exception starting opencode: ${err instanceof Error ? err.message : String(err)}`;
     serverProcess = null;
     serverReady = false;
     return false;

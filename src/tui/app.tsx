@@ -14,6 +14,7 @@ import { appReducer, INITIAL_STATE, type ChatMessage } from "./state.js";
 import { getModelById } from "./models.js";
 import { useKeyboard } from "./hooks/use-keyboard.js";
 import { useMessageHandler } from "./hooks/use-message-handler.js";
+import type { SessionError } from "../api/logger.js";
 
 export default function App() {
   const [state, dispatch] = useReducer(appReducer, INITIAL_STATE);
@@ -26,7 +27,8 @@ export default function App() {
   const [, setResizeTick] = useState(0);
 
   const currentModel = getModelById(state.modelId);
-  const sessionErrors = useRef<{ timestamp: number; model: string; message: string }[]>([]);
+  const sessionErrors = useRef<SessionError[]>([]);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   // Force re-render on terminal resize
   useEffect(() => {
@@ -77,6 +79,14 @@ export default function App() {
     [],
   );
 
+  const { handleSendMessage, abortStream } = useMessageHandler({
+    state,
+    dispatch,
+    sessionErrors,
+    setFileNotifications,
+    abortControllerRef,
+  });
+
   useKeyboard({
     state,
     dispatch,
@@ -87,13 +97,7 @@ export default function App() {
     sessionErrors,
     exit,
     handleCommandAction,
-  });
-
-  const { handleSendMessage } = useMessageHandler({
-    state,
-    dispatch,
-    sessionErrors,
-    setFileNotifications,
+    abortStream,
   });
 
   useEffect(() => {

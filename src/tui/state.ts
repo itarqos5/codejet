@@ -30,6 +30,10 @@ export interface PendingQuestion {
 
 export type UpdatePhase = "idle" | "checking" | "installing" | "done" | "error";
 
+export interface AbortControllerRef {
+  controller: AbortController | null;
+}
+
 export interface AppState {
   messages: ChatMessage[];
   mode: AppMode;

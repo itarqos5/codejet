@@ -17,6 +17,7 @@ interface KeyboardDeps {
   sessionErrors: React.MutableRefObject<SessionError[]>;
   exit: () => void;
   handleCommandAction: (action: string) => void;
+  abortStream: () => void;
 }
 
 export function useKeyboard({
@@ -29,6 +30,7 @@ export function useKeyboard({
   sessionErrors,
   exit,
   handleCommandAction,
+  abortStream,
 }: KeyboardDeps) {
   useInput((input, key) => {
     // Ctrl+C - log errors, clear terminal, exit
@@ -74,10 +76,15 @@ export function useKeyboard({
       return;
     }
 
-    // Escape - close modals
+    // Escape - close modals or abort streaming
     if (key.escape) {
       if (modalMode !== "none") {
         setModalMode("none");
+        return;
+      }
+      if (state.streaming) {
+        abortStream();
+        dispatch({ type: "SET_STREAMING_CONTENT", content: "" });
         return;
       }
       return;

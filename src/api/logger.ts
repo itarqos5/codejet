@@ -8,6 +8,7 @@ export interface SessionError {
   timestamp: number;
   model: string;
   message: string;
+  type?: "opencode" | "kilo" | "unknown";
 }
 
 export function logSessionErrors(errors: SessionError[]): void {
@@ -30,7 +31,8 @@ export function logSessionErrors(errors: SessionError[]): void {
 
   for (const err of errors) {
     const ts = new Date(err.timestamp).toISOString();
-    lines.push(`[${ts}] ${err.message}`);
+    const typeTag = err.type ? ` [${err.type.toUpperCase()}]` : "";
+    lines.push(`[${ts}]${typeTag} ${err.message}`);
     lines.push("");
   }
 
