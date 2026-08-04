@@ -2,9 +2,9 @@
 .SYNOPSIS
     Step 3: Extract and save authentication tokens.
 .DESCRIPTION
-    Reads OpenCode and Kilo Code auth tokens from known paths,
-    saves them to ~/.codejet/keys.json. Prompts for interactive
-    login if tokens are not found.
+    Reads OpenCode and Kilo Code auth tokens from known paths.
+    Prompts for interactive login if tokens are not found.
+    Exports tokens for the orchestrator to save after repo setup.
 .NOTES
     Author: Itarqos
     Version: 1.3.0
@@ -143,19 +143,6 @@ if ($needLogin) {
 if ($opencodeToken) { Write-Success "OpenCode authentication token found" }
 if ($kiloToken) { Write-Success "Kilo Code authentication token found" }
 
-# Save tokens to keys.json
-if ($opencodeToken -or $kiloToken) {
-    if (-not (Test-Path $codejetDir)) {
-        New-Item -ItemType Directory -Path $codejetDir -Force | Out-Null
-    }
-
-    $kiloValue = if ($kiloToken) { $kiloToken } else { "" }
-    $opencodeValue = if ($opencodeToken) { $opencodeToken } else { "" }
-    $keys = @{
-        kilo_token = $kiloValue
-        opencode_token = $opencodeValue
-    } | ConvertTo-Json -Depth 3
-
-    Set-Content -Path $keysPath -Value $keys -Encoding UTF8
-    Write-Success "Authentication tokens saved to $keysPath"
-}
+# Export tokens so the orchestrator can save them after repo setup
+$script:opencodeToken = $opencodeToken
+$script:kiloToken = $kiloToken

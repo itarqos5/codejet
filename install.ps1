@@ -41,6 +41,24 @@ Write-Banner "CodeJet Installation"
 # --- Step 4: Repository Setup ---
 . "$scriptsDir\setup-repo.ps1"
 
+# --- Save auth tokens to keys.json after clone ---
+$codejetDir = "$env:USERPROFILE\.codejet"
+$keysPath = "$codejetDir\keys.json"
+if ($script:opencodeToken -or $script:kiloToken) {
+    if (-not (Test-Path $codejetDir)) {
+        New-Item -ItemType Directory -Path $codejetDir -Force | Out-Null
+    }
+    $kiloValue = if ($script:kiloToken) { $script:kiloToken } else { "" }
+    $opencodeValue = if ($script:opencodeToken) { $script:opencodeToken } else { "" }
+    $keys = @{
+        kilo_token = $kiloValue
+        opencode_token = $opencodeValue
+    } | ConvertTo-Json -Depth 3
+    Set-Content -Path $keysPath -Value $keys -Encoding UTF8
+    . "$scriptsDir\utils.ps1"
+    Write-Success "Authentication tokens saved to $keysPath"
+}
+
 # --- Step 5: Completion ---
 . "$scriptsDir\complete.ps1"
 
