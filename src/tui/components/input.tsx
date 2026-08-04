@@ -23,7 +23,7 @@ export function InputBox({
       paddingX={1}
       flexDirection="column"
     >
-      <Text color="gray" dimColor>
+      <Text color="cyan">
         {modelName}
       </Text>
       <Box gap={1}>

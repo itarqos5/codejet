@@ -1,4 +1,4 @@
-import React, { useReducer, useCallback, useEffect, useState } from "react";
+import React, { useReducer, useCallback, useEffect, useState, useRef } from "react";
 import { Box, Text, useInput, useApp } from "ink";
 import { Header } from "./components/header.js";
 import { ChatArea } from "./components/chat.js";
@@ -13,6 +13,7 @@ import { UpdateModal } from "./components/update-modal.js";
 import { appReducer, INITIAL_STATE, type ChatMessage, type FileChange } from "./state.js";
 import { getModelById, getModelProvider } from "./models.js";
 import { loadKeys } from "../api/keys.js";
+import { logSessionErrors, type SessionError } from "../api/logger.js";
 
 function genId(): string {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
@@ -28,6 +29,7 @@ export default function App() {
   >([]);
 
   const currentModel = getModelById(state.modelId);
+  const sessionErrors = useRef<SessionError[]>([]);
 
   // Start OpenCode server on mount
   useEffect(() => {
@@ -52,6 +54,15 @@ export default function App() {
 
   // Keyboard shortcuts
   useInput((input, key) => {
+    // Ctrl+C - log errors, clear terminal, exit
+    if (key.ctrl && input === "c") {
+      logSessionErrors(sessionErrors.current);
+      import("../api/opencode-server.js").then((mod) => mod.stopServer()).catch(() => {});
+      process.stdout.write("\x1B[2J\x1B[0f");
+      exit();
+      return;
+    }
+
     // Update flow - Enter to install/update, Esc to dismiss
     if (state.updateAvailable && state.updatePhase === "idle") {
       if (key.return) {
@@ -186,6 +197,11 @@ export default function App() {
       } catch (err) {
         const errorMsg = err instanceof Error ? err.message : String(err);
         dispatch({ type: "SET_ERROR", error: errorMsg });
+        sessionErrors.current.push({
+          timestamp: Date.now(),
+          model: currentModel?.name ?? state.modelId,
+          message: errorMsg,
+        });
         const errChatMsg: ChatMessage = {
           id: genId(),
           role: "system",
@@ -203,11 +219,9 @@ export default function App() {
   async function handleOpenCodeMessage(content: string) {
     const ocServer = await import("../api/opencode-server.js");
 
-    if (!ocServer.isServerReady()) {
-      const ready = await ocServer.waitForServer(8000);
-      if (!ready) {
-        throw new Error("OpenCode server failed to start. Make sure 'opencode' is installed.");
-      }
+    const ready = await ocServer.waitForServer(10000);
+    if (!ready) {
+      throw new Error("OpenCode server not reachable. Make sure 'opencode' is installed and try again.");
     }
 
     const oc = await import("../api/opencode.js");
