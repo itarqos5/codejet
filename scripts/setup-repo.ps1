@@ -21,15 +21,20 @@ $repoUrl = "https://github.com/itarqos5/codejet.git"
 $codejetDir = "$env:USERPROFILE\.codejet"
 $targetDir = $codejetDir
 
-if (Test-Path $targetDir) {
-    Write-Info "Removing existing directory..."
-    Remove-Item -Path $targetDir -Recurse -Force
-}
+$alreadyCloned = (Resolve-Path $PSScriptRoot).Path -eq (Resolve-Path $targetDir).Path
 
-Write-Info "Cloning repository..."
-Show-ProgressBar "Cloning" 0
-git clone $repoUrl $targetDir 2>$null | Out-Null
-Show-ProgressBar "Cloning" 100
+if ($alreadyCloned) {
+    Write-Info "Repository already present at $targetDir"
+} else {
+    if (Test-Path $targetDir) {
+        Write-Info "Removing existing directory..."
+        Remove-Item -Path $targetDir -Recurse -Force
+    }
+    Write-Info "Cloning repository..."
+    Show-ProgressBar "Cloning" 0
+    git clone $repoUrl $targetDir 2>$null | Out-Null
+    Show-ProgressBar "Cloning" 100
+}
 
 Push-Location $targetDir
 
