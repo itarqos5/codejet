@@ -8,3 +8,7 @@ export { globTool } from "./glob.js";
 export { grepTool } from "./grep.js";
 export { webfetchTool } from "./webfetch.js";
 export { listTool } from "./list.js";
+export { createFileTool } from "./create_file.js";
+export { deleteFileTool } from "./delete_file.js";
+export { createDirectoryTool } from "./create_directory.js";
+export { deleteDirectoryTool } from "./delete_directory.js";
