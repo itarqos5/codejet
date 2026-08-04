@@ -1,4 +1,4 @@
-<# 
+﻿<# 
 .SYNOPSIS
     CodeJet Production Installation Script
 .DESCRIPTION
@@ -19,17 +19,18 @@ $White = [System.ConsoleColor]::White
 $Gray = [System.ConsoleColor]::DarkGray
 $Reset = [System.ConsoleColor]::Gray
 
-$AnsiCyan = "`x1b[36m"
-$AnsiGreen = "`x1b[32m"
-$AnsiYellow = "`x1b[33m"
-$AnsiRed = "`x1b[31m"
-$AnsiReset = "`x1b[0m"
-$AnsiBold = "`x1b[1m"
-$AnsiDim = "`x1b[2m"
+$esc = [char]27
+$AnsiCyan = "$esc[36m"
+$AnsiGreen = "$esc[32m"
+$AnsiYellow = "$esc[33m"
+$AnsiRed = "$esc[31m"
+$AnsiReset = "$esc[0m"
+$AnsiBold = "$esc[1m"
+$AnsiDim = "$esc[2m"
 
 # ─── Helper Functions ───
 function Write-Banner {
-    param([string]$Text, [ConsoleColor]$Color = $Cyan)
+    param([string]$Text)
     $width = 60
     $padding = [math]::Max(0, ($width - $Text.Length) / 2)
     $line = "═" * $width
@@ -41,7 +42,7 @@ function Write-Banner {
 }
 
 function Write-Step {
-    param([string]$Step, [string]$Message, [ConsoleColor]$Color = $Cyan)
+    param([string]$Step, [string]$Message)
     Write-Host ($AnsiCyan + "▶ " + $AnsiBold + "Step $Step" + $AnsiReset + $AnsiCyan + ": " + $Message + $AnsiReset)
 }
 
@@ -92,7 +93,7 @@ function Prompt-YesNo {
 function Prompt-Menu {
     param([string]$Prompt, [string[]]$Options)
     $selected = 0
-    $Host.UI.RawUI.CursorVisible = $false
+    try { $Host.UI.RawUI.CursorVisible = $false } catch { }
     try {
         while ($true) {
             Write-Host ($AnsiCyan + $Prompt + $AnsiReset)
@@ -115,7 +116,7 @@ function Prompt-Menu {
             }
         }
     } finally {
-        $Host.UI.RawUI.CursorVisible = $true
+        try { $Host.UI.RawUI.CursorVisible = $true } catch { }
     }
     return $selected
 }
@@ -143,7 +144,7 @@ function Install-ViaWinget {
 }
 
 # ─── Main Installation Flow ───
-Write-Banner "CodeJet Installation" $Cyan
+Write-Banner "CodeJet Installation"
 
 # ─── Step 1: System Dependency Checks ───
 Write-Step "1/5" "Checking system dependencies..."
@@ -385,7 +386,7 @@ if ($currentPath -notlike "*$codejetBin*") {
 Write-Step "5/5" "Installation complete!"
 
 Write-Host ""
-Write-Banner "🎉 CodeJet installed successfully!" $Green
+Write-Banner "🎉 CodeJet installed successfully!"
 Write-Host ($AnsiGreen + "  Run 'codejet' to use the CLI tool!" + $AnsiReset)
 Write-Host ($AnsiDim + "  Note: Restart your terminal for PATH changes to take effect." + $AnsiReset)
 Write-Host ""
