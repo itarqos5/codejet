@@ -10,7 +10,7 @@ import { QuestionPrompt } from "./components/question.js";
 import { PlanPrompt } from "./components/plan-prompt.js";
 import { FileNotification } from "./components/file-notification.js";
 import { UpdateToast } from "./components/update-toast.js";
-import { UpdateModal } from "./components/update-modal.js";
+import { UpdateOverlay } from "./components/update-modal.js";
 import { appReducer, INITIAL_STATE, type ChatMessage } from "./state.js";
 import { getModelById } from "./models.js";
 import { useKeyboard } from "./hooks/use-keyboard.js";
@@ -181,14 +181,24 @@ export default function App() {
       ) : (
         <>
           {state.updateAvailable && state.updatePhase === "idle" && (
-            <UpdateToast version={state.updateAvailable} highlighted={true} />
-          )}
-          {(state.updatePhase === "installing" || state.updatePhase === "done" || state.updatePhase === "error") && (
-            <UpdateModal
-              visible={true}
-              phase={state.updatePhase === "installing" ? "Installing..." : state.updatePhase === "done" ? "Done!" : "Error during install"}
-              logLines={state.updateLog}
-              completed={state.updatePhase === "done"}
+            <UpdateToast
+              version={state.updateAvailable}
+              onInstall={() => {
+                dispatch({ type: "SET_UPDATE_PHASE", phase: "installing" });
+                import("../api/updater.js").then((mod) => {
+                  mod.installUpdate(({ task, percent }) => {
+                    dispatch({ type: "SET_UPDATE_PROGRESS", task, percent });
+                  }).then((ok) => {
+                    dispatch({ type: "SET_UPDATE_PHASE", phase: ok ? "done" : "error" });
+                    if (!ok) {
+                      dispatch({ type: "SET_UPDATE_ERROR", error: "Update failed. Check logs for details." });
+                    }
+                  });
+                });
+              }}
+              onDismiss={() => {
+                dispatch({ type: "SET_UPDATE_AVAILABLE", version: null });
+              }}
             />
           )}
 
@@ -263,6 +273,16 @@ export default function App() {
             streaming={state.streaming}
             todoCount={state.todos.length}
           />
+
+          {/* Update progress overlay - renders on top of existing content */}
+          {(state.updatePhase === "installing" || state.updatePhase === "done" || state.updatePhase === "error") && (
+            <UpdateOverlay
+              phase={state.updatePhase}
+              currentTask={state.updateTask}
+              progress={state.updateProgress}
+              error={state.updateError}
+            />
+          )}
         </>
       )}
     </Box>

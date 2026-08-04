@@ -62,10 +62,13 @@ export function useKeyboard({
       if (key.return) {
         dispatch({ type: "SET_UPDATE_PHASE", phase: "installing" });
         import("../../api/updater.js").then((mod) => {
-          mod.installUpdate((line) => {
-            dispatch({ type: "SET_UPDATE_PHASE", phase: "installing", log: line });
+          mod.installUpdate(({ task, percent }) => {
+            dispatch({ type: "SET_UPDATE_PROGRESS", task, percent });
           }).then((ok) => {
             dispatch({ type: "SET_UPDATE_PHASE", phase: ok ? "done" : "error" });
+            if (!ok) {
+              dispatch({ type: "SET_UPDATE_ERROR", error: "Update failed. Check logs for details." });
+            }
           });
         });
         return;
@@ -79,6 +82,13 @@ export function useKeyboard({
     if (state.updatePhase === "done") {
       if (key.return) {
         import("../../api/updater.js").then((mod) => mod.restartApp());
+        return;
+      }
+    }
+    if (state.updatePhase === "error") {
+      if (key.escape) {
+        dispatch({ type: "SET_UPDATE_PHASE", phase: "idle" });
+        dispatch({ type: "SET_UPDATE_AVAILABLE", version: null });
         return;
       }
     }
