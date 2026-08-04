@@ -31,12 +31,31 @@ export default function App() {
   const sessionErrors = useRef<SessionError[]>([]);
   const abortControllerRef = useRef<AbortController | null>(null);
 
-  // Force re-render on terminal resize
+  // Force re-render on terminal resize with debounce
+  const resizeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   useEffect(() => {
-    const onResize = () => setResizeTick((t) => t + 1);
+    const onResize = () => {
+      // Debounce resize events to prevent excessive re-renders
+      if (resizeTimeoutRef.current) {
+        clearTimeout(resizeTimeoutRef.current);
+      }
+      resizeTimeoutRef.current = setTimeout(() => {
+        setResizeTick((t) => t + 1);
+      }, 100);
+    };
     process.stdout.on("resize", onResize);
-    return () => { process.stdout.off("resize", onResize); };
+    return () => {
+      process.stdout.off("resize", onResize);
+      if (resizeTimeoutRef.current) {
+        clearTimeout(resizeTimeoutRef.current);
+      }
+    };
   }, []);
+
+  // Ensure minimum terminal size
+  const rows = Math.max(20, process.stdout.rows ?? 24);
+  const cols = Math.max(80, process.stdout.columns ?? 80);
+  const chatHeight = Math.max(4, rows - 10); // Account for header, input, status bar
 
   // Startup: OpenCode server + Kilo ping + update check
   useEffect(() => {
@@ -130,9 +149,6 @@ export default function App() {
       return () => clearTimeout(timer);
     }
   }, [state.error]);
-
-  const rows = process.stdout.rows ?? 24;
-  const chatHeight = Math.max(4, rows - 8);
 
   return (
     <Box flexDirection="column" width="100%" height="100%">

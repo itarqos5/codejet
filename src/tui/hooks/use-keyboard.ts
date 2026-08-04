@@ -91,6 +91,31 @@ export function useKeyboard({
       return;
     }
 
+    // Question prompt navigation (when pending question exists)
+    if (state.pendingQuestion) {
+      const options = state.pendingQuestion.options || [];
+      if (key.upArrow && options.length > 0) {
+        // Move selection up
+        dispatch({
+          type: "SET_PENDING_QUESTION",
+          question: { ...state.pendingQuestion },
+        });
+        // Handled in QuestionPrompt component via local state
+        return;
+      }
+      if (key.downArrow && options.length > 0) {
+        // Move selection down
+        return;
+      }
+      if (key.escape) {
+        // Cancel question - send empty answer
+        state.pendingQuestion.resolve("");
+        dispatch({ type: "SET_PENDING_QUESTION", question: null });
+        return;
+      }
+      return;
+    }
+
     // Escape - close modals or abort streaming
     if (key.escape) {
       if (modalMode !== "none") {
