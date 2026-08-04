@@ -122,6 +122,15 @@ export default function App() {
     }
   }, [fileNotifications.length]);
 
+  useEffect(() => {
+    if (state.error) {
+      const timer = setTimeout(() => {
+        dispatch({ type: "SET_ERROR", error: null });
+      }, 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [state.error]);
+
   const rows = process.stdout.rows ?? 24;
   const chatHeight = Math.max(4, rows - 8);
 

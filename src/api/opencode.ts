@@ -13,7 +13,10 @@ async function request<T>(
 ): Promise<T> {
   const res = await fetch(`${baseUrl()}${path}`, {
     method,
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    },
     body: body != null ? JSON.stringify(body) : undefined,
   });
 
@@ -23,7 +26,14 @@ async function request<T>(
   }
 
   if (res.status === 204) return undefined as T;
-  return res.json() as Promise<T>;
+
+  const ct = res.headers.get("content-type") ?? "";
+  if (!ct.includes("application/json")) {
+    throw new Error(`OpenCode ${method} ${path} returned non-JSON (${ct})`);
+  }
+
+  const json = (await res.json()) as { data?: T };
+  return (json.data !== undefined ? json.data : json) as T;
 }
 
 // ── Types ───────────────────────────────────────────────────
@@ -36,39 +46,52 @@ export interface HealthResponse {
 export interface Session {
   id: string;
   title: string;
-  directory: string;
+  directory?: string;
   parentID?: string;
-  time: { created: number; updated: number };
+  time?: { created: number; updated: number };
+  projectID?: string;
+  cost?: number;
+  tokens?: Record<string, number>;
 }
 
 export interface MessagePart {
   type: string;
   content?: string;
+  text?: string;
   [key: string]: unknown;
 }
 
 export interface Message {
-  info: {
-    id: string;
-    role: string;
-    sessionID: string;
-    time: { created: number; completed?: number };
-  };
-  parts: MessagePart[];
+  id: string;
+  type?: string;
+  text?: string;
+  role?: string;
+  sessionID?: string;
+  time?: { created: number; completed?: number };
+  parts?: MessagePart[];
+}
+
+export interface PromptResponse {
+  admittedSeq: number;
+  id: string;
+  sessionID: string;
+  prompt: { text: string };
+  delivery: string;
+  timeCreated: number;
 }
 
 export interface ModelInfo {
   id: string;
-  modelID: string;
+  modelID?: string;
   providerID: string;
   name: string;
-  capabilities: {
+  capabilities?: {
     tools: boolean;
     input: string[];
     output: string[];
   };
   enabled: boolean;
-  limit: { context: number; output: number };
+  limit?: { context: number; output: number };
 }
 
 export interface ProviderInfo {
@@ -90,64 +113,68 @@ export async function health(): Promise<HealthResponse> {
 // Sessions
 
 export async function listSessions(): Promise<Session[]> {
-  return request<Session[]>("GET", "/session");
+  const data = await request<Session[]>("GET", "/api/session");
+  return Array.isArray(data) ? data : [];
 }
 
 export async function createSession(parentID?: string, title?: string): Promise<Session> {
-  return request<Session>("POST", "/session", { parentID, title });
+  return request<Session>("POST", "/api/session", { parentID, title });
 }
 
 export async function getSession(id: string): Promise<Session> {
-  return request<Session>("GET", `/session/${id}`);
+  return request<Session>("GET", `/api/session/${id}`);
 }
 
 export async function deleteSession(id: string): Promise<boolean> {
-  return request<boolean>("DELETE", `/session/${id}`);
+  return request<boolean>("DELETE", `/api/session/${id}`);
 }
 
 export async function updateSession(id: string, title: string): Promise<Session> {
-  return request<Session>("PATCH", `/session/${id}`, { title });
+  return request<Session>("PATCH", `/api/session/${id}`, { title });
 }
 
 // Messages
 
 export async function listMessages(sessionID: string, limit?: number): Promise<Message[]> {
   const query = limit != null ? `?limit=${limit}` : "";
-  return request<Message[]>("GET", `/session/${sessionID}/messages${query}`);
+  return request<Message[]>("GET", `/api/session/${sessionID}/message${query}`);
 }
 
 export async function sendMessage(
   sessionID: string,
   parts: MessagePart[],
   opts?: { model?: string; agent?: string },
-): Promise<Message> {
-  return request<Message>("POST", `/session/${sessionID}/prompt`, {
-    parts,
-    model: opts?.model,
-    agent: opts?.agent,
-  });
+): Promise<PromptResponse> {
+  const text = parts.map((p) => p.content ?? p.text ?? "").join("\n");
+  const body: Record<string, unknown> = {
+    prompt: { text },
+  };
+  if (opts?.model) {
+    body.model = { providerID: "opencode", modelID: opts.model };
+  }
+  return request<PromptResponse>("POST", `/api/session/${sessionID}/prompt`, body);
 }
 
 // Models
 
 export async function listModels(): Promise<ModelInfo[]> {
-  return request<ModelInfo[]>("GET", "/model");
+  return request<ModelInfo[]>("GET", "/api/model");
 }
 
 export async function getDefaultModel(): Promise<ModelInfo> {
-  return request<ModelInfo>("GET", "/model/default");
+  return request<ModelInfo>("GET", "/api/model/default");
 }
 
 // Providers
 
 export async function listProviders(): Promise<ProviderInfo[]> {
-  return request<ProviderInfo[]>("GET", "/provider");
+  return request<ProviderInfo[]>("GET", "/api/provider");
 }
 
 export async function getProviderAuth(
   providerID: string,
 ): Promise<ProviderAuthMethod[]> {
-  return request<ProviderAuthMethod[]>("GET", `/provider/${providerID}/auth`);
+  return request<ProviderAuthMethod[]>("GET", `/api/provider/${providerID}/auth`);
 }
 
 // Auth
@@ -156,52 +183,13 @@ export async function setAuth(
   providerID: string,
   credentials: Record<string, unknown>,
 ): Promise<boolean> {
-  return request<boolean>("PUT", `/auth/${providerID}`, credentials);
-}
-
-// Config
-
-export async function getConfig(): Promise<Record<string, unknown>> {
-  return request<Record<string, unknown>>("GET", "/config");
-}
-
-// VCS
-
-export async function getVcsStatus(): Promise<Record<string, unknown>> {
-  return request<Record<string, unknown>>("GET", "/vcs/status");
-}
-
-export async function getVcsDiff(): Promise<Record<string, unknown>> {
-  return request<Record<string, unknown>>("GET", "/vcs/diff");
+  return request<boolean>("PUT", `/api/auth/${providerID}`, credentials);
 }
 
 // Abort
 
 export async function abortSession(id: string): Promise<boolean> {
-  return request<boolean>("POST", `/session/${id}/abort`);
-}
-
-// Tools
-
-export interface ToolInfo {
-  name: string;
-  description: string;
-  parameters: Record<string, unknown>;
-}
-
-export async function listToolIds(): Promise<string[]> {
-  return request<string[]>("GET", "/experimental/tool/ids");
-}
-
-export async function listTools(
-  provider?: string,
-  model?: string,
-): Promise<ToolInfo[]> {
-  const params = new URLSearchParams();
-  if (provider) params.set("provider", provider);
-  if (model) params.set("model", model);
-  const query = params.toString() ? `?${params}` : "";
-  return request<ToolInfo[]>("GET", `/experimental/tool${query}`);
+  return request<boolean>("POST", `/api/session/${id}/abort`);
 }
 
 // ── Authenticated fetch helper ──────────────────────────────

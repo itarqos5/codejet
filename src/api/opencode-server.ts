@@ -23,8 +23,12 @@ async function pingServer(): Promise<boolean> {
   try {
     const res = await fetch(`${getOpenCodeBaseUrl()}/global/health`, {
       signal: AbortSignal.timeout(2000),
+      headers: { Accept: "application/json" },
     });
-    return res.ok;
+    const ct = res.headers.get("content-type") ?? "";
+    if (!res.ok || !ct.includes("application/json")) return false;
+    const data = (await res.json()) as { healthy?: boolean };
+    return data.healthy === true;
   } catch {
     return false;
   }

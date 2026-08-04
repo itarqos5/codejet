@@ -100,27 +100,38 @@ export function useMessageHandler({
     const oc = await import("../../api/opencode.js");
     const session = await oc.createSession(undefined, "CodeJet Session");
 
-    const parts = [
-      { type: "text" as const, content: state.mode === "plan"
-        ? `[PLAN MODE] Create a detailed implementation plan for: ${content}. Break into steps, describe files/functions, order of operations. Do NOT write code.`
-        : content },
-    ];
+    const promptText = state.mode === "plan"
+      ? `[PLAN MODE] Create a detailed implementation plan for: ${content}. Break into steps, describe files/functions, order of operations. Do NOT write code.`
+      : content;
 
     const ocModel = state.modelId.replace("opencode/", "");
 
-    const responsePromise = oc.sendMessage(session.id, parts, { model: ocModel });
+    const sendPromise = oc.sendMessage(session.id, [{ type: "text", content: promptText }], { model: ocModel });
     const timeoutPromise = new Promise<never>((_, reject) => {
       const id = setTimeout(() => reject(new Error("OpenCode request timed out after 120s")), 120_000);
       signal.addEventListener("abort", () => { clearTimeout(id); reject(new Error("Aborted")); }, { once: true });
     });
 
-    const response = await Promise.race([responsePromise, timeoutPromise]);
+    await Promise.race([sendPromise, timeoutPromise]);
 
+    const deadline = Date.now() + 120_000;
     let fullContent = "";
-    for (const part of response.parts) {
-      if (part.type === "text" && part.content) {
-        fullContent += part.content;
+
+    while (Date.now() < deadline) {
+      if (signal.aborted) throw new Error("Aborted");
+
+      const msgs = await oc.listMessages(session.id);
+      const assistantMsgs = msgs.filter(
+        (m) => m.type === "assistant" || m.role === "assistant",
+      );
+
+      if (assistantMsgs.length > 0) {
+        const last = assistantMsgs[assistantMsgs.length - 1];
+        fullContent = last.text ?? last.parts?.map((p) => p.content ?? p.text ?? "").join("") ?? "";
+        if (fullContent) break;
       }
+
+      await new Promise((r) => setTimeout(r, 1000));
     }
 
     if (fullContent) {
