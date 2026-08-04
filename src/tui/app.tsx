@@ -284,93 +284,97 @@ export default function App() {
 
   return (
     <Box flexDirection="column" width="100%" height="100%">
-      {/* Header - ASCII art + model + mode badge */}
-      <Header model={currentModel?.name ?? state.modelId} mode={state.mode} />
-
-      {/* Main content area */}
-      <Box flexDirection="row" flexGrow={1} height={chatHeight}>
-        {/* Chat column */}
-        <Box flexDirection="column" flexGrow={1} overflow="hidden">
-          <ChatArea
-            messages={state.messages}
-            streaming={state.streaming}
-            streamingContent={state.streamingContent}
-            modelName={currentModel?.name ?? "assistant"}
-            maxHeight={chatHeight - 2}
-          />
-
-          {fileNotifications.map((n, i) => (
-            <FileNotification key={i} filePath={n.filePath} action={n.action} />
-          ))}
-
-          {state.pendingQuestion && (
-            <QuestionPrompt
-              question={state.pendingQuestion}
-              onAnswer={(answer) => {
-                state.pendingQuestion?.resolve(answer);
-                dispatch({ type: "SET_PENDING_QUESTION", question: null });
-              }}
+      {modalMode !== "none" ? (
+        <>
+          {modalMode === "command" && (
+            <CommandModal
+              visible={true}
+              selectedIndex={modalIndex}
+              onSelect={handleCommandAction}
+              onClose={() => setModalMode("none")}
             />
           )}
-
-          {state.error && (
-            <Box paddingLeft={2}>
-              <Text color="red" bold>
-                Error: {state.error}
-              </Text>
-            </Box>
+          {modalMode === "model" && (
+            <ModelSelector
+              visible={true}
+              models={FREE_MODELS.map((m) => ({ id: m.id, name: m.name, provider: m.provider }))}
+              selectedIndex={modalIndex}
+              onSelect={(modelId) => {
+                dispatch({ type: "SET_MODEL", modelId });
+                const model = getModelById(modelId);
+                if (model) {
+                  dispatch({ type: "SET_CONTEXT_TOKENS", used: 0, max: model.maxContext });
+                }
+                setModalMode("none");
+              }}
+              onClose={() => setModalMode("none")}
+            />
           )}
+        </>
+      ) : (
+        <>
+          {/* Header - ASCII art + model + mode badge */}
+          <Header model={currentModel?.name ?? state.modelId} mode={state.mode} />
 
-          <InputBox
-            mode={state.mode}
-            onSubmit={handleSendMessage}
-            disabled={state.streaming || !!state.pendingQuestion}
-          />
-        </Box>
+          {/* Main content area */}
+          <Box flexDirection="row" flexGrow={1} height={chatHeight}>
+            {/* Chat column */}
+            <Box flexDirection="column" flexGrow={1} overflow="hidden">
+              <ChatArea
+                messages={state.messages}
+                streaming={state.streaming}
+                streamingContent={state.streamingContent}
+                modelName={currentModel?.name ?? "assistant"}
+                maxHeight={chatHeight - 2}
+              />
 
-        {/* Todo sidebar */}
-        {state.todos.length > 0 && (
-          <Box paddingLeft={1}>
-            <TodoPanel todos={state.todos} />
+              {fileNotifications.map((n, i) => (
+                <FileNotification key={i} filePath={n.filePath} action={n.action} />
+              ))}
+
+              {state.pendingQuestion && (
+                <QuestionPrompt
+                  question={state.pendingQuestion}
+                  onAnswer={(answer) => {
+                    state.pendingQuestion?.resolve(answer);
+                    dispatch({ type: "SET_PENDING_QUESTION", question: null });
+                  }}
+                />
+              )}
+
+              {state.error && (
+                <Box paddingLeft={2}>
+                  <Text color="red" bold>
+                    Error: {state.error}
+                  </Text>
+                </Box>
+              )}
+
+              <InputBox
+                mode={state.mode}
+                onSubmit={handleSendMessage}
+                disabled={state.streaming || !!state.pendingQuestion}
+              />
+            </Box>
+
+            {/* Todo sidebar */}
+            {state.todos.length > 0 && (
+              <Box paddingLeft={1}>
+                <TodoPanel todos={state.todos} />
+              </Box>
+            )}
           </Box>
-        )}
-      </Box>
 
-      {/* Status bar */}
-      <StatusBar
-        mode={state.mode}
-        modelId={state.modelId}
-        contextUsed={state.contextTokensUsed}
-        contextMax={state.contextTokensMax}
-        streaming={state.streaming}
-        todoCount={state.todos.length}
-      />
-
-      {/* Overlay modals - render on top */}
-      {modalMode === "command" && (
-        <CommandModal
-          visible={true}
-          selectedIndex={modalIndex}
-          onSelect={handleCommandAction}
-          onClose={() => setModalMode("none")}
-        />
-      )}
-
-      {modalMode === "model" && (
-        <ModelSelector
-          visible={true}
-          models={FREE_MODELS.map((m) => ({ id: m.id, name: m.name, provider: m.provider }))}
-          selectedIndex={modalIndex}
-          onSelect={(modelId) => {
-            dispatch({ type: "SET_MODEL", modelId });
-            const model = getModelById(modelId);
-            if (model) {
-              dispatch({ type: "SET_CONTEXT_TOKENS", used: 0, max: model.maxContext });
-            }
-            setModalMode("none");
-          }}
-          onClose={() => setModalMode("none")}
-        />
+          {/* Status bar */}
+          <StatusBar
+            mode={state.mode}
+            modelId={state.modelId}
+            contextUsed={state.contextTokensUsed}
+            contextMax={state.contextTokensMax}
+            streaming={state.streaming}
+            todoCount={state.todos.length}
+          />
+        </>
       )}
     </Box>
   );

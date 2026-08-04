@@ -7,21 +7,25 @@ export const VERSION: string = pkg.version;
 export interface FreeModel {
   id: string;
   name: string;
-  provider: "kilo" | "opencode";
+  provider: "kilo";
   maxContext: number;
 }
 
 export const FREE_MODELS: FreeModel[] = [
-  // Kilo Code free models
-  { id: "nvidia/nemotron-ultra-253b", name: "Nemotron 3 Ultra", provider: "kilo", maxContext: 131072 },
-  { id: "nvidia/nemotron-super-49b-v1", name: "Nemotron 3 Super", provider: "kilo", maxContext: 131072 },
-  // OpenCode free models
-  { id: "deepseek/deepseek-v4-flash-free", name: "Deepseek V4 Flash Free", provider: "opencode", maxContext: 131072 },
-  { id: "moonshotai/mimo-v2.5-free", name: "MiMo V2.5 Free", provider: "opencode", maxContext: 131072 },
-  { id: "openai/codex-mini", name: "Big Pickle", provider: "opencode", maxContext: 131072 },
+  { id: "nvidia/nemotron-3-ultra-550b-a55b:free", name: "Nemotron 3 Ultra", provider: "kilo", maxContext: 1000000 },
+  { id: "nvidia/nemotron-3-super-120b-a12b:free", name: "Nemotron 3 Super", provider: "kilo", maxContext: 262144 },
+  { id: "inclusionai/ling-3.0-flash:free", name: "Ling 3.0 Flash", provider: "kilo", maxContext: 262144 },
+  { id: "tencent/hy3:free", name: "Hy3", provider: "kilo", maxContext: 262144 },
+  { id: "inclusionai/ring-2.6-1t:free", name: "Ring 2.6 1T", provider: "kilo", maxContext: 262144 },
+  { id: "inclusionai/ling-2.6-flash:free", name: "Ling 2.6 Flash", provider: "kilo", maxContext: 262144 },
+  { id: "poolside/laguna-s-2.1:free", name: "Laguna S 2.1", provider: "kilo", maxContext: 262144 },
+  { id: "google/gemma-4-26b-a4b-it:free", name: "Gemma 4 26B", provider: "kilo", maxContext: 262144 },
+  { id: "tencent/hy3-preview:free", name: "Hy3 Preview", provider: "kilo", maxContext: 262144 },
+  { id: "inclusionai/ling-2.6-1t:free", name: "Ling 2.6 1T", provider: "kilo", maxContext: 262144 },
+  { id: "nex-agi/nex-n2-pro:free", name: "Nex N2 Pro", provider: "kilo", maxContext: 262144 },
 ];
 
-export const DEFAULT_MODEL_ID = "openai/codex-mini";
+export const DEFAULT_MODEL_ID = "nvidia/nemotron-3-ultra-550b-a55b:free";
 
 export function getModelById(id: string): FreeModel | undefined {
   return FREE_MODELS.find((m) => m.id === id);

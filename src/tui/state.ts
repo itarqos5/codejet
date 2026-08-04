@@ -86,7 +86,7 @@ export function appReducer(state: AppState, action: AppAction): AppState {
 export const INITIAL_STATE: AppState = {
   messages: [],
   mode: "build",
-  modelId: "openai/codex-mini",
+  modelId: "nvidia/nemotron-3-ultra-550b-a55b:free",
   streaming: false,
   streamingContent: "",
   todos: [],

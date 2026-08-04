@@ -47,26 +47,22 @@ function FileChangeDisplay({ message }: { message: ChatMessage }) {
 
 function UserMessage({ message }: { message: ChatMessage }) {
   return (
-    <Box flexDirection="column" gap={0}>
-      <Text color="white" bold>
+    <Box flexDirection="column" borderStyle="round" borderColor="blue" paddingX={1} marginBottom={1}>
+      <Text color="blue" bold>
         you
       </Text>
-      <Box paddingLeft={2}>
-        <Text>{message.content}</Text>
-      </Box>
+      <Text>{message.content}</Text>
     </Box>
   );
 }
 
 function AssistantMessage({ message }: { message: ChatMessage }) {
   return (
-    <Box flexDirection="column" gap={0}>
+    <Box flexDirection="column" borderStyle="round" borderColor="cyan" paddingX={1} marginBottom={1}>
       <Text color="cyan" bold>
         {message.modelName ?? "assistant"}
       </Text>
-      <Box paddingLeft={2}>
-        <Text>{message.content}</Text>
-      </Box>
+      <Text>{message.content}</Text>
     </Box>
   );
 }
@@ -84,16 +80,14 @@ function SystemMessage({ message }: { message: ChatMessage }) {
 function StreamingMessage({ content, model }: { content: string; model: string }) {
   if (!content) return null;
   return (
-    <Box flexDirection="column" gap={0}>
+    <Box flexDirection="column" borderStyle="round" borderColor="cyan" paddingX={1} marginBottom={1}>
       <Text color="cyan" bold>
         {model}
         <Text color="gray" dimColor>
           {" "}streaming...
         </Text>
       </Text>
-      <Box paddingLeft={2}>
-        <Text>{content}</Text>
-      </Box>
+      <Text>{content}</Text>
     </Box>
   );
 }
