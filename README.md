@@ -12,17 +12,18 @@
 
 ## Installation
 
-Run the installation script via PowerShell (bypasses cache to always fetch latest):
+Download the latest `codejet-installer.exe` from [Releases](https://github.com/itarqos5/codejet/releases), then run it as Administrator:
 
-```powershell
-$h = @{ 'Cache-Control' = 'no-cache' }; iwr -useb "https://raw.githubusercontent.com/itarqos5/codejet/main/install.ps1" -Headers $h | iex
+```
+Right-click codejet-installer.exe > Run as administrator
 ```
 
-Or for development/testing the UI:
-
-```powershell
-$h = @{ 'Cache-Control' = 'no-cache' }; iwr -useb "https://raw.githubusercontent.com/itarqos5/codejet/main/install-dev.ps1" -Headers $h | iex
-```
+The installer will:
+1. Check and install Node.js & Git if missing
+2. Install OpenCode and Kilo Code CLI tools
+3. Extract authentication tokens
+4. Clone the CodeJet repository to `~/.codejet`
+5. Install dependencies and configure your PATH
 
 ## Usage
 
@@ -37,6 +38,13 @@ codejet
 - Node.js 18+
 - Git
 - npm (comes with Node.js)
+
+## Building from Source
+
+```bash
+python -m pip install pyinstaller
+python -m PyInstaller installer/install.py --onefile --name codejet-installer --distpath . --console --clean --noconfirm
+```
 
 ## License
 
