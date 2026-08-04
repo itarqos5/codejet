@@ -26,6 +26,7 @@ export interface PendingQuestion {
   question: string;
   options?: string[];
   resolve: (answer: string) => void;
+  selectedIndex?: number;
 }
 
 export interface PendingPlan {
