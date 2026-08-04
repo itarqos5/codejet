@@ -1,0 +1,48 @@
+{
+  "name": "codejet",
+  "version": "1.0.0",
+  "description": "Blazing-fast, terminal-native AI agent runner for zero-latency execution using OpenCode & Kilo Code models",
+  "main": "dist/index.js",
+  "type": "module",
+  "bin": {
+    "codejet": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx src/index.ts",
+    "start": "node dist/index.js",
+    "prepare": "npm run build"
+  },
+  "keywords": [
+    "ai",
+    "cli",
+    "coding",
+    "agent",
+    "opencode",
+    "kilo",
+    "terminal"
+  ],
+  "author": "Itarqos",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/itarqos5/codejet.git"
+  },
+  "bugs": {
+    "url": "https://github.com/itarqos5/codejet/issues"
+  },
+  "homepage": "https://github.com/itarqos5/codejet#readme",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "files": [
+    "dist",
+    "LICENSE",
+    "README.md"
+  ],
+  "devDependencies": {
+    "@types/node": "^26.1.2",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  }
+}
