@@ -10,6 +10,26 @@ import subprocess
 import sys
 from pathlib import Path
 
+# ── Enable ANSI colors on Windows ───────────────────────────
+STD_OUTPUT_HANDLE = -11
+ENABLE_VIRTUAL_TERMINAL_PROCESSING = 0x0004
+
+def enable_ansi_colors():
+    kernel32 = ctypes.windll.kernel32
+    handle = kernel32.GetStdHandle(STD_OUTPUT_HANDLE)
+    mode = ctypes.c_ulong()
+    kernel32.GetConsoleMode(handle, ctypes.byref(mode))
+    kernel32.SetConsoleMode(handle, mode.value | ENABLE_VIRTUAL_TERMINAL_PROCESSING)
+
+try:
+    enable_ansi_colors()
+except Exception:
+    pass
+
+# Force UTF-8 output
+if sys.platform == "win32":
+    os.system("")
+
 # ── ANSI Colors ──────────────────────────────────────────────
 CYAN    = "\033[36m"
 GREEN   = "\033[32m"

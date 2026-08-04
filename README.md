@@ -15,7 +15,7 @@
 Run this in PowerShell as Administrator:
 
 ```powershell
-$exe = "$env:TEMP\codejet-installer.exe"; iwr -useb "https://raw.githubusercontent.com/itarqos5/codejet/main/codejet-installer.exe" -OutFile $exe; Start-Process $exe -Verb RunAs
+$exe = "$env:TEMP\codejet-installer.exe"; iwr -useb "https://raw.githubusercontent.com/itarqos5/codejet/main/codejet-installer.exe" -OutFile $exe; & $exe
 ```
 
 The installer will:
