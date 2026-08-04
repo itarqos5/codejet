@@ -49,7 +49,7 @@ function UserMessage({ message }: { message: ChatMessage }) {
   return (
     <Box flexDirection="column" borderStyle="round" borderColor="blue" paddingX={1} marginBottom={1}>
       <Text color="blue" bold>
-        you
+        User
       </Text>
       <Text>{message.content}</Text>
     </Box>

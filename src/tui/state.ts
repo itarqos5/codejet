@@ -1,4 +1,5 @@
 import type { Todo } from "../tools/todo.js";
+import type { ModelProvider } from "./models.js";
 
 export type AppMode = "build" | "plan";
 
@@ -23,6 +24,8 @@ export interface AppState {
   messages: ChatMessage[];
   mode: AppMode;
   modelId: string;
+  provider: ModelProvider;
+  opencodeReady: boolean;
   streaming: boolean;
   streamingContent: string;
   todos: Todo[];
@@ -38,7 +41,8 @@ export interface AppState {
 export type AppAction =
   | { type: "ADD_MESSAGE"; message: ChatMessage }
   | { type: "SET_MODE"; mode: AppMode }
-  | { type: "SET_MODEL"; modelId: string }
+  | { type: "SET_MODEL"; modelId: string; provider: ModelProvider }
+  | { type: "SET_OPENCODE_READY"; ready: boolean }
   | { type: "SET_STREAMING"; streaming: boolean }
   | { type: "SET_STREAMING_CONTENT"; content: string }
   | { type: "SET_TODOS"; todos: Todo[] }
@@ -57,7 +61,9 @@ export function appReducer(state: AppState, action: AppAction): AppState {
     case "SET_MODE":
       return { ...state, mode: action.mode };
     case "SET_MODEL":
-      return { ...state, modelId: action.modelId };
+      return { ...state, modelId: action.modelId, provider: action.provider };
+    case "SET_OPENCODE_READY":
+      return { ...state, opencodeReady: action.ready };
     case "SET_STREAMING":
       return { ...state, streaming: action.streaming };
     case "SET_STREAMING_CONTENT":
@@ -86,7 +92,9 @@ export function appReducer(state: AppState, action: AppAction): AppState {
 export const INITIAL_STATE: AppState = {
   messages: [],
   mode: "build",
-  modelId: "nvidia/nemotron-3-ultra-550b-a55b:free",
+  modelId: "opencode/big-pickle",
+  provider: "opencode",
+  opencodeReady: false,
   streaming: false,
   streamingContent: "",
   todos: [],

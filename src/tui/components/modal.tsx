@@ -1,5 +1,6 @@
 import React from "react";
 import { Box, Text } from "ink";
+import { OPENCODE_MODELS, KILO_MODELS, type FreeModel } from "../models.js";
 
 interface ModalOption {
   label: string;
@@ -14,6 +15,25 @@ const COMMANDS: ModalOption[] = [
   { label: "Show Todos", description: "View and manage your todo list", action: "todos" },
   { label: "Clear History", description: "Clear all messages", action: "clear" },
 ];
+
+interface SelectableItem {
+  type: "header" | "model";
+  label: string;
+  model?: FreeModel;
+}
+
+function buildModelItems(): SelectableItem[] {
+  const items: SelectableItem[] = [];
+  items.push({ type: "header", label: "OpenCode Models" });
+  for (const m of OPENCODE_MODELS) {
+    items.push({ type: "model", label: m.name, model: m });
+  }
+  items.push({ type: "header", label: "KiloCode Models" });
+  for (const m of KILO_MODELS) {
+    items.push({ type: "model", label: m.name, model: m });
+  }
+  return items;
+}
 
 export function CommandModal({
   visible,
@@ -81,21 +101,24 @@ export function CommandModal({
 
 export function ModelSelector({
   visible,
-  models,
   selectedIndex,
   onSelect,
   onClose,
 }: {
   visible: boolean;
-  models: { id: string; name: string; provider: string }[];
   selectedIndex: number;
-  onSelect: (modelId: string) => void;
+  onSelect: (modelId: string, provider: "opencode" | "kilo") => void;
   onClose: () => void;
 }) {
   if (!visible) return null;
 
+  const items = buildModelItems();
+  const selectableIndices = items.map((_it, i) => i).filter((i) => items[i].type === "model");
+  const clampedSelected = Math.min(selectedIndex, selectableIndices.length - 1);
+  const selectedItemIdx = selectableIndices[clampedSelected] ?? 0;
+
   const rows = process.stdout.rows ?? 24;
-  const topPad = Math.max(0, Math.floor((rows - models.length - 6) / 2));
+  const topPad = Math.max(0, Math.floor((rows - items.length - 6) / 2));
 
   return (
     <Box flexDirection="column" width="100%" height="100%">
@@ -117,19 +140,28 @@ export function ModelSelector({
               ⌘ Select Model
             </Text>
           </Box>
-          {models.map((model, i) => {
-            const isSelected = i === selectedIndex;
+          {items.map((item, i) => {
+            if (item.type === "header") {
+              return (
+                <Box key={item.label} paddingX={1} marginTop={i > 0 ? 1 : 0}>
+                  <Text color="yellow" bold>
+                    {item.label}
+                  </Text>
+                </Box>
+              );
+            }
+            const isCurrentlySelected = i === selectedItemIdx;
             return (
-              <Box key={model.id} gap={1} paddingX={1}>
-                <Text color={isSelected ? "yellow" : "gray"}>
-                  {isSelected ? "▸" : " "}
+              <Box key={item.model!.id} gap={1} paddingX={1}>
+                <Text color={isCurrentlySelected ? "yellow" : "gray"}>
+                  {isCurrentlySelected ? "▸" : " "}
                 </Text>
-                <Text color={isSelected ? "white" : "gray"} bold={isSelected}>
-                  {model.name}
+                <Text color={isCurrentlySelected ? "white" : "gray"} bold={isCurrentlySelected}>
+                  {item.label}
                 </Text>
                 <Text color="gray" dimColor>
                   {" "}
-                  (free)
+                  ({item.model!.provider === "opencode" ? "opencode" : "free"})
                 </Text>
               </Box>
             );
@@ -144,3 +176,5 @@ export function ModelSelector({
     </Box>
   );
 }
+
+export { buildModelItems, type SelectableItem };

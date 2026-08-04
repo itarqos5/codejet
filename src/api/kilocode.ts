@@ -162,6 +162,7 @@ export async function chatCompletionsStream(
 
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
+  let buffer = "";
 
   return new ReadableStream({
     async pull(controller) {
@@ -171,11 +172,14 @@ export async function chatCompletionsStream(
         return;
       }
 
-      const text = decoder.decode(value, { stream: true });
-      const lines = text.split("\n").filter((l) => l.startsWith("data: "));
+      buffer += decoder.decode(value, { stream: true });
+      const parts = buffer.split("\n");
+      buffer = parts.pop() ?? "";
 
-      for (const line of lines) {
-        const data = line.slice(6);
+      for (const part of parts) {
+        const trimmed = part.trim();
+        if (!trimmed.startsWith("data: ")) continue;
+        const data = trimmed.slice(6);
         if (data === "[DONE]") {
           controller.close();
           return;

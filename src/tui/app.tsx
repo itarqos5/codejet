@@ -4,12 +4,12 @@ import { Header } from "./components/header.js";
 import { ChatArea } from "./components/chat.js";
 import { InputBox } from "./components/input.js";
 import { StatusBar } from "./components/statusbar.js";
-import { CommandModal, ModelSelector } from "./components/modal.js";
+import { CommandModal, ModelSelector, buildModelItems } from "./components/modal.js";
 import { TodoPanel } from "./components/todo.js";
 import { QuestionPrompt } from "./components/question.js";
 import { FileNotification } from "./components/file-notification.js";
 import { appReducer, INITIAL_STATE, type ChatMessage } from "./state.js";
-import { FREE_MODELS, getModelById } from "./models.js";
+import { getModelById, getModelProvider } from "./models.js";
 import { loadKeys } from "../api/keys.js";
 
 function genId(): string {
@@ -27,14 +27,14 @@ export default function App() {
 
   const currentModel = getModelById(state.modelId);
 
-  // Load todos from disk on mount
+  // Start OpenCode server on mount
   useEffect(() => {
-    import("../tools/todo.js")
-      .then(async (mod) => {
-        const todos = await (mod as { loadTodos: () => Promise<unknown> }).loadTodos?.() ?? [];
-        dispatch({ type: "SET_TODOS", todos: todos as import("./state.js").AppState["todos"] });
-      })
-      .catch(() => {});
+    import("../api/opencode-server.js").then((mod) => {
+      mod.startServer();
+      mod.waitForServer(10000).then((ready) => {
+        dispatch({ type: "SET_OPENCODE_READY", ready });
+      });
+    }).catch(() => {});
   }, []);
 
   // Keyboard shortcuts
@@ -79,15 +79,19 @@ export default function App() {
     }
 
     if (modalMode === "model") {
+      const items = buildModelItems();
+      const selectableIndices = items.map((it, i) => i).filter((i) => items[i].type === "model");
       if (key.upArrow) {
         setModalIndex((prev) => Math.max(0, prev - 1));
       } else if (key.downArrow) {
-        setModalIndex((prev) => Math.min(FREE_MODELS.length - 1, prev + 1));
+        setModalIndex((prev) => Math.min(selectableIndices.length - 1, prev + 1));
       } else if (key.return) {
-        const model = FREE_MODELS[modalIndex];
-        if (model) {
-          dispatch({ type: "SET_MODEL", modelId: model.id });
-          dispatch({ type: "SET_CONTEXT_TOKENS", used: 0, max: model.maxContext });
+        const selectedItemIdx = selectableIndices[modalIndex];
+        const selected = items[selectedItemIdx];
+        if (selected?.model) {
+          const provider = getModelProvider(selected.model.id);
+          dispatch({ type: "SET_MODEL", modelId: selected.model.id, provider });
+          dispatch({ type: "SET_CONTEXT_TOKENS", used: 0, max: selected.model.maxContext });
         }
         setModalMode("none");
       }
@@ -130,128 +134,12 @@ export default function App() {
       dispatch({ type: "SET_STREAMING_CONTENT", content: "" });
 
       try {
-        const keys = loadKeys();
+        const provider = getModelProvider(state.modelId);
 
-        if (keys.kilo_token) {
-          const { chatCompletionsStream } = await import("../api/kilocode.js");
-          const stream = await chatCompletionsStream({
-            model: state.modelId,
-            messages: [
-              {
-                role: "system",
-                content:
-                  "You are CodeJet, an AI coding assistant. You help users with software engineering tasks. When you need to ask the user a question, use the ask tool. When you create or modify files, describe what you did.",
-              },
-              ...state.messages.map((m) => ({
-                role: m.role === "user" ? ("user" as const) : ("assistant" as const),
-                content: m.content,
-              })),
-              { role: "user" as const, content },
-            ],
-            tools: [
-              {
-                type: "function" as const,
-                function: {
-                  name: "ask",
-                  description: "Ask the user a question",
-                  parameters: {
-                    type: "object",
-                    properties: {
-                      question: { type: "string" },
-                      options: { type: "array", items: { type: "string" } },
-                    },
-                    required: ["question"],
-                  },
-                },
-              },
-              {
-                type: "function" as const,
-                function: {
-                  name: "write_file",
-                  description: "Write content to a file",
-                  parameters: {
-                    type: "object",
-                    properties: {
-                      path: { type: "string" },
-                      content: { type: "string" },
-                    },
-                    required: ["path", "content"],
-                  },
-                },
-              },
-            ],
-          });
-
-          const reader = stream.getReader();
-          let fullContent = "";
-
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-
-            const delta = value.choices?.[0]?.delta;
-            if (delta?.content) {
-              fullContent += delta.content;
-              dispatch({ type: "SET_STREAMING_CONTENT", content: fullContent });
-            }
-            if (delta?.tool_calls) {
-              for (const tc of delta.tool_calls) {
-                if (tc.function?.name === "ask") {
-                  try {
-                    const args = JSON.parse(tc.function.arguments);
-                    const answer = await new Promise<string>((resolve) => {
-                      dispatch({
-                        type: "SET_PENDING_QUESTION",
-                        question: {
-                          id: genId(),
-                          question: args.question,
-                          options: args.options,
-                          resolve,
-                        },
-                      });
-                    });
-                    dispatch({ type: "SET_PENDING_QUESTION", question: null });
-                  } catch {}
-                }
-                if (tc.function?.name === "write_file") {
-                  try {
-                    const args = JSON.parse(tc.function.arguments);
-                    setFileNotifications((prev) => [
-                      ...prev,
-                      { filePath: args.path, action: "created" as const },
-                    ]);
-                  } catch {}
-                }
-              }
-            }
-          }
-
-          if (fullContent) {
-            const assistantMsg: ChatMessage = {
-              id: genId(),
-              role: "assistant",
-              content: fullContent,
-              timestamp: Date.now(),
-              modelName: currentModel?.name,
-            };
-            dispatch({ type: "ADD_MESSAGE", message: assistantMsg });
-
-            const estimatedTokens = state.contextTokensUsed + fullContent.length / 4 + content.length / 4;
-            dispatch({
-              type: "SET_CONTEXT_TOKENS",
-              used: Math.round(estimatedTokens),
-              max: currentModel?.maxContext ?? 131072,
-            });
-          }
+        if (provider === "opencode") {
+          await handleOpenCodeMessage(content);
         } else {
-          const assistantMsg: ChatMessage = {
-            id: genId(),
-            role: "assistant",
-            content: "[No API key found. Set your Kilo token in ~/.codejet/keys.json]",
-            timestamp: Date.now(),
-            modelName: currentModel?.name,
-          };
-          dispatch({ type: "ADD_MESSAGE", message: assistantMsg });
+          await handleKiloMessage(content);
         }
       } catch (err) {
         const errorMsg = err instanceof Error ? err.message : String(err);
@@ -269,6 +157,182 @@ export default function App() {
     },
     [state.modelId, state.messages, state.contextTokensUsed, currentModel],
   );
+
+  async function handleOpenCodeMessage(content: string) {
+    const ocServer = await import("../api/opencode-server.js");
+
+    if (!ocServer.isServerReady()) {
+      const ready = await ocServer.waitForServer(8000);
+      if (!ready) {
+        throw new Error("OpenCode server failed to start. Make sure 'opencode' is installed.");
+      }
+    }
+
+    const oc = await import("../api/opencode.js");
+    const session = await oc.createSession(undefined, "CodeJet Session");
+
+    const parts = [
+      { type: "text" as const, content },
+    ];
+
+    const ocModel = state.modelId.replace("opencode/", "");
+    const response = await oc.sendMessage(session.id, parts, { model: ocModel });
+
+    let fullContent = "";
+    for (const part of response.parts) {
+      if (part.type === "text" && part.content) {
+        fullContent += part.content;
+      }
+    }
+
+    if (fullContent) {
+      dispatch({ type: "SET_STREAMING_CONTENT", content: fullContent });
+      const assistantMsg: ChatMessage = {
+        id: genId(),
+        role: "assistant",
+        content: fullContent,
+        timestamp: Date.now(),
+        modelName: currentModel?.name,
+      };
+      dispatch({ type: "ADD_MESSAGE", message: assistantMsg });
+
+      const estimatedTokens = state.contextTokensUsed + fullContent.length / 4 + content.length / 4;
+      dispatch({
+        type: "SET_CONTEXT_TOKENS",
+        used: Math.round(estimatedTokens),
+        max: currentModel?.maxContext ?? 131072,
+      });
+    } else {
+      throw new Error("OpenCode returned an empty response");
+    }
+  }
+
+  async function handleKiloMessage(content: string) {
+    const keys = loadKeys();
+
+    if (!keys.kilo_token) {
+      const assistantMsg: ChatMessage = {
+        id: genId(),
+        role: "assistant",
+        content: "[No Kilo API key found. Set your Kilo token in ~/.codejet/keys.json]",
+        timestamp: Date.now(),
+        modelName: currentModel?.name,
+      };
+      dispatch({ type: "ADD_MESSAGE", message: assistantMsg });
+      return;
+    }
+
+    const { chatCompletionsStream } = await import("../api/kilocode.js");
+    const stream = await chatCompletionsStream({
+      model: state.modelId,
+      messages: [
+        {
+          role: "system",
+          content:
+            "You are CodeJet, an AI coding assistant. You help users with software engineering tasks. When you need to ask the user a question, use the ask tool. When you create or modify files, describe what you did.",
+        },
+        ...state.messages.map((m) => ({
+          role: m.role === "user" ? ("user" as const) : ("assistant" as const),
+          content: m.content,
+        })),
+        { role: "user" as const, content },
+      ],
+      tools: [
+        {
+          type: "function" as const,
+          function: {
+            name: "ask",
+            description: "Ask the user a question",
+            parameters: {
+              type: "object",
+              properties: {
+                question: { type: "string" },
+                options: { type: "array", items: { type: "string" } },
+              },
+              required: ["question"],
+            },
+          },
+        },
+        {
+          type: "function" as const,
+          function: {
+            name: "write_file",
+            description: "Write content to a file",
+            parameters: {
+              type: "object",
+              properties: {
+                path: { type: "string" },
+                content: { type: "string" },
+              },
+              required: ["path", "content"],
+            },
+          },
+        },
+      ],
+    });
+
+    const reader = stream.getReader();
+    let fullContent = "";
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      const delta = value.choices?.[0]?.delta;
+      if (delta?.content) {
+        fullContent += delta.content;
+        dispatch({ type: "SET_STREAMING_CONTENT", content: fullContent });
+      }
+      if (delta?.tool_calls) {
+        for (const tc of delta.tool_calls) {
+          if (tc.function?.name === "ask") {
+            try {
+              const args = JSON.parse(tc.function.arguments);
+              const answer = await new Promise<string>((resolve) => {
+                dispatch({
+                  type: "SET_PENDING_QUESTION",
+                  question: {
+                    id: genId(),
+                    question: args.question,
+                    options: args.options,
+                    resolve,
+                  },
+                });
+              });
+              dispatch({ type: "SET_PENDING_QUESTION", question: null });
+            } catch {}
+          }
+          if (tc.function?.name === "write_file") {
+            try {
+              const args = JSON.parse(tc.function.arguments);
+              setFileNotifications((prev) => [
+                ...prev,
+                { filePath: args.path, action: "created" as const },
+              ]);
+            } catch {}
+          }
+        }
+      }
+    }
+
+    if (fullContent) {
+      const assistantMsg: ChatMessage = {
+        id: genId(),
+        role: "assistant",
+        content: fullContent,
+        timestamp: Date.now(),
+        modelName: currentModel?.name,
+      };
+      dispatch({ type: "ADD_MESSAGE", message: assistantMsg });
+
+      const estimatedTokens = state.contextTokensUsed + fullContent.length / 4 + content.length / 4;
+      dispatch({
+        type: "SET_CONTEXT_TOKENS",
+        used: Math.round(estimatedTokens),
+        max: currentModel?.maxContext ?? 131072,
+      });
+    }
+  }
 
   useEffect(() => {
     if (fileNotifications.length > 0) {
@@ -297,10 +361,9 @@ export default function App() {
           {modalMode === "model" && (
             <ModelSelector
               visible={true}
-              models={FREE_MODELS.map((m) => ({ id: m.id, name: m.name, provider: m.provider }))}
               selectedIndex={modalIndex}
-              onSelect={(modelId) => {
-                dispatch({ type: "SET_MODEL", modelId });
+              onSelect={(modelId, provider) => {
+                dispatch({ type: "SET_MODEL", modelId, provider });
                 const model = getModelById(modelId);
                 if (model) {
                   dispatch({ type: "SET_CONTEXT_TOKENS", used: 0, max: model.maxContext });
