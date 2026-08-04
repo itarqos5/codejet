@@ -42,20 +42,40 @@ if (-not $PSScriptRoot) {
     Write-Host "$esc[36m============================================================$esc[0m"
     Write-Host ""
 
+    # --- Verify git is installed ---
+    $hasGit = $false
+    try { $null = Get-Command git -ErrorAction Stop; $hasGit = $true } catch { }
+
+    if (-not $hasGit) {
+        Write-Host "$esc[33m  [!] Git not found. Installing via winget...$esc[0m"
+        try {
+            winget install --id Git.Git --silent --accept-source-agreements --accept-package-agreements
+            $env:PATH = [System.Environment]::GetEnvironmentVariable("PATH", "Machine") + ";" + [System.Environment]::GetEnvironmentVariable("PATH", "User")
+            try { $null = Get-Command git -ErrorAction Stop; $hasGit = $true } catch { }
+        } catch { }
+        if (-not $hasGit) {
+            Write-Host "$esc[31m  [X] Git installation failed. Please install manually from https://git-scm.com$esc[0m"
+            exit 1
+        }
+        Write-Host "$esc[32m  [OK] Git installed successfully$esc[0m"
+    } else {
+        Write-Host "$esc[2m  [i] Git found: $(git --version)$esc[0m"
+    }
+
     $repoUrl = "https://github.com/itarqos5/codejet.git"
     $targetDir = "$env:USERPROFILE\.codejet"
 
     if (Test-Path "$targetDir\.git") {
         Write-Host "$esc[2m  [i] Repository exists, pulling latest...$esc[0m"
         Push-Location $targetDir
-        git pull origin main 2>$null | Out-Null
+        $null = git pull origin main 2>&1
         Pop-Location
     } else {
         if (Test-Path $targetDir) {
             Remove-Item -Path $targetDir -Recurse -Force
         }
         Write-Host "$esc[2m  [i] Cloning CodeJet repository...$esc[0m"
-        git clone $repoUrl $targetDir 2>$null | Out-Null
+        $null = git clone $repoUrl $targetDir 2>&1
     }
 
     Write-Host "$esc[2m  [i] Starting installer...$esc[0m"
