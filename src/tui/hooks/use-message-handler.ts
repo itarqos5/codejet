@@ -87,33 +87,47 @@ export function useMessageHandler({
     const ocServer = await import("../../api/opencode-server.js");
 
     if (!ocServer.isServerReady()) {
-      const ready = await ocServer.waitForServer(8000);
+      // Try to wait for server, but with streaming feedback
+      dispatch({ type: "SET_STREAMING_CONTENT", content: "Connecting to OpenCode server..." });
+      const ready = await ocServer.waitForServer(10000);
       if (!ready) {
         const serverErr = ocServer.getLastError();
-        const detail = serverErr ? `\nDetails: ${serverErr}` : "";
-        throw new Error(
-          "OpenCode server is not running. " +
-          "Try restarting codejet, or switch to a KiloCode model (Ctrl+P → Switch Model)." +
-          detail
-        );
+
+        // Try one more time to start the server
+        dispatch({ type: "SET_STREAMING_CONTENT", content: "Starting OpenCode server..." });
+        const startOk = await ocServer.startServer();
+        if (!startOk) {
+          const detail = serverErr ? `\n\nServer error: ${serverErr}` : "";
+          throw new Error(
+            "Could not connect to OpenCode server.\n\n" +
+            "Possible fixes:\n" +
+            "• Make sure 'opencode' is installed and on PATH\n" +
+            "• Try running 'opencode serve' manually in another terminal\n" +
+            "• Switch to a KiloCode model (Ctrl+P → Switch Model)" +
+            detail
+          );
+        }
       }
     }
 
     const oc = await import("../../api/opencode.js");
-    
-    // Get existing messages to find the last one
+
+    // Always create a fresh session to avoid stale state
     let session: Session;
     try {
-      const sessions = await oc.listSessions();
-      if (sessions.length > 0) {
-        // Use existing session
-        session = sessions[0];
-      } else {
-        // Create new session
-        session = await oc.createSession(undefined, "CodeJet Session");
-      }
-    } catch {
       session = await oc.createSession(undefined, "CodeJet Session");
+    } catch (err) {
+      // If creating fails, try listing existing
+      try {
+        const sessions = await oc.listSessions();
+        if (sessions.length > 0) {
+          session = sessions[0];
+        } else {
+          throw err;
+        }
+      } catch {
+        throw new Error(`Failed to create OpenCode session: ${err instanceof Error ? err.message : String(err)}`);
+      }
     }
 
     const promptText = state.mode === "plan"
@@ -122,43 +136,74 @@ export function useMessageHandler({
 
     const ocModel = state.modelId.replace("opencode/", "");
 
-    // First, get list of existing messages to know where to stop
-    let lastMessageId: string | null = null;
+    dispatch({ type: "SET_STREAMING_CONTENT", content: "Sending to model..." });
+
+    // Send the message
     try {
-      const existingMsgs = await oc.listMessages(session.id, 10);
-      if (existingMsgs.length > 0) {
-        lastMessageId = existingMsgs[existingMsgs.length - 1].id;
+      const sendPromise = oc.sendMessage(session.id, [{ type: "text", content: promptText }], { model: ocModel });
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        const id = setTimeout(() => reject(new Error("Timed out sending message to OpenCode (30s)")), 30000);
+        signal.addEventListener("abort", () => { clearTimeout(id); reject(new Error("Aborted")); }, { once: true });
+      });
+
+      await Promise.race([sendPromise, timeoutPromise]);
+    } catch (err) {
+      if (signal.aborted) throw new Error("Aborted");
+      throw new Error(`Failed to send message: ${err instanceof Error ? err.message : String(err)}`);
+    }
+
+    dispatch({ type: "SET_STREAMING_CONTENT", content: "Waiting for response..." });
+
+    // Poll for response with visual feedback
+    const pollStart = Date.now();
+    const deadline = pollStart + 120000; // 2 minutes
+    let fullContent = "";
+    let lastPollContent = "";
+
+    while (Date.now() < deadline) {
+      if (signal.aborted) throw new Error("Aborted");
+
+      try {
+        const msgs = await oc.listMessages(session.id, 20);
+
+        // Find assistant messages
+        const assistantMsgs = msgs.filter(
+          (m) => m.type === "assistant" || m.role === "assistant",
+        );
+
+        if (assistantMsgs.length > 0) {
+          const last = assistantMsgs[assistantMsgs.length - 1];
+          const text = last.text ?? last.parts?.map((p) => p.content ?? p.text ?? "").join("") ?? "";
+
+          if (text && text.trim().length > 0) {
+            fullContent = text;
+            // Show progressive content while waiting
+            dispatch({ type: "SET_STREAMING_CONTENT", content: fullContent });
+
+            // Check if the message is complete (has completion time or no new content after 3s)
+            if (last.time?.completed) {
+              break;
+            }
+
+            // If content hasn't changed in 3 seconds, assume complete
+            if (lastPollContent === fullContent) {
+              break;
+            }
+            lastPollContent = fullContent;
+          }
+        }
+      } catch {
+        // Polling error - keep trying
       }
-    } catch {
-      // Ignore - start fresh
+
+      // Show elapsed time in streaming content
+      const elapsed = Math.round((Date.now() - pollStart) / 1000);
+      if (!fullContent && elapsed > 5) {
+        dispatch({ type: "SET_STREAMING_CONTENT", content: `Waiting for ${ocModel} response... (${elapsed}s)` });
+      }
+
+      await new Promise((r) => setTimeout(r, 1500));
     }
-
-    console.log(`[opencode] Sending message to session ${session.id}, model: ${ocModel}`);
-
-    // Send the message with timeout
-    const sendPromise = oc.sendMessage(session.id, [{ type: "text", content: promptText }], { model: ocModel });
-    const timeoutPromise = new Promise<never>((_, reject) => {
-      const id = setTimeout(() => reject(new Error("OpenCode request timed out after 30s")), 30000);
-      signal.addEventListener("abort", () => { clearTimeout(id); reject(new Error("Aborted")); }, { once: true });
-    });
-
-    await Promise.race([sendPromise, timeoutPromise]);
-
-    console.log("[opencode] Message sent, waiting for response...");
-
-    // Wait for assistant response with improved polling
-    const assistantMsg = await oc.waitForAssistantMessage(
-      session.id,
-      lastMessageId,
-      120000, // 2 minutes timeout
-      1500,   // Poll every 1.5s
-    );
-
-    if (!assistantMsg) {
-      throw new Error("OpenCode timed out waiting for response. The model may be processing a long request. Try again or switch models.");
-    }
-
-    const fullContent = assistantMsg.text ?? assistantMsg.parts?.map((p) => p.content ?? p.text ?? "").join("") ?? "";
 
     if (fullContent) {
       dispatch({ type: "SET_STREAMING_CONTENT", content: fullContent });

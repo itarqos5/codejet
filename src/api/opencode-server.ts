@@ -7,6 +7,7 @@ let serverProcess: ChildProcess | null = null;
 let serverReady = false;
 let lastError: string | null = null;
 let serverStartTime = 0;
+let isShuttingDown = false;
 
 export function getOpenCodeBaseUrl(): string {
   return `http://${OPENCODE_HOST}:${OPENCODE_PORT}`;
@@ -38,7 +39,6 @@ async function pingServer(): Promise<boolean> {
 function killPortProcess(): void {
   try {
     if (process.platform === "win32") {
-      // Use netstat to find process using the port
       const output = execSync(`netstat -ano | findstr :${OPENCODE_PORT}`, {
         encoding: "utf-8",
         timeout: 3000,
@@ -49,8 +49,8 @@ function killPortProcess(): void {
         const parts = line.trim().split(/\s+/);
         const pid = parts[parts.length - 1];
         if (pid && pid !== "0" && !isNaN(parseInt(pid))) {
-          try { 
-            execSync(`taskkill /F /PID ${pid}`, { timeout: 3000, windowsHide: true }); 
+          try {
+            execSync(`taskkill /F /PID ${pid}`, { timeout: 3000, windowsHide: true });
           } catch {}
         }
       }
@@ -60,28 +60,22 @@ function killPortProcess(): void {
   } catch {}
 }
 
-export async function waitForServer(timeoutMs = 20000): Promise<boolean> {
+export async function waitForServer(timeoutMs = 25000): Promise<boolean> {
   if (serverReady && await pingServer()) return true;
 
   const deadline = Date.now() + timeoutMs;
-  let lastStatusMessage = "";
-  
+
   while (Date.now() < deadline) {
+    if (isShuttingDown) return false;
+
     const isReady = await pingServer();
     if (isReady) {
       serverReady = true;
       lastError = null;
-      console.log(`[opencode-server] Server ready after ${Date.now() - serverStartTime}ms`);
       return true;
     }
-    
-    // Log status periodically
-    const elapsed = Date.now() - serverStartTime;
-    if (elapsed > 5000 && elapsed % 2000 < 100) {
-      console.log(`[opencode-server] Waiting for server... (${elapsed}ms)`);
-    }
-    
-    await new Promise((r) => setTimeout(r, 500));
+
+    await new Promise((r) => setTimeout(r, 800));
   }
 
   serverReady = false;
@@ -89,97 +83,96 @@ export async function waitForServer(timeoutMs = 20000): Promise<boolean> {
 }
 
 export async function startServer(): Promise<boolean> {
-  // Check if already running
-  if (serverProcess && serverReady) {
-    if (await pingServer()) {
-      console.log("[opencode-server] Server already running");
-      return true;
-    }
+  // First check if opencode is already running externally
+  const alreadyRunning = await pingServer();
+  if (alreadyRunning) {
+    serverReady = true;
+    lastError = null;
+    return true;
   }
 
-  // Kill any existing process on the port
+  // Check if already running from us
+  if (serverProcess && serverReady) {
+    if (await pingServer()) return true;
+  }
+
+  // Kill any stale process on the port
   killPortProcess();
-  await new Promise((r) => setTimeout(r, 1000));
+  await new Promise((r) => setTimeout(r, 800));
 
   serverStartTime = Date.now();
   lastError = null;
   serverReady = false;
 
   try {
-    console.log("[opencode-server] Starting OpenCode server...");
-    
+    // On Windows, use shell: true and the full command
+    const isWindows = process.platform === "win32";
+
     serverProcess = spawn("opencode", ["serve", "--port", String(OPENCODE_PORT), "--hostname", OPENCODE_HOST], {
       stdio: ["ignore", "pipe", "pipe"],
-      detached: false,
+      detached: !isWindows, // detach on unix so it survives parent
       windowsHide: true,
       shell: true,
     });
 
     let stderrOutput = "";
-    let stdoutOutput = "";
 
-    serverProcess.stdout?.on("data", (chunk: Buffer) => {
-      stdoutOutput += chunk.toString();
-      // Log server output for debugging
-      const lines = stdoutOutput.split("\n");
-      if (lines.length > 5) {
-        console.log("[opencode-server]", lines.slice(-3).join("\n"));
-        stdoutOutput = lines.slice(-1).join("\n");
-      }
+    serverProcess.stdout?.on("data", () => {
+      // Drain stdout to prevent buffer blocking
     });
 
     serverProcess.stderr?.on("data", (chunk: Buffer) => {
       stderrOutput += chunk.toString();
+      // Keep only last 1KB
+      if (stderrOutput.length > 1024) {
+        stderrOutput = stderrOutput.slice(-1024);
+      }
     });
 
     serverProcess.on("error", (err) => {
       lastError = `Failed to start opencode: ${err.message}`;
-      console.error("[opencode-server]", lastError);
       serverProcess = null;
       serverReady = false;
     });
 
     serverProcess.on("exit", (code, signal) => {
-      if (!serverReady) {
+      if (!serverReady && !isShuttingDown) {
         lastError = `opencode exited before ready (code=${code}, signal=${signal})`;
-        if (stderrOutput) {
-          lastError += `\nStderr: ${stderrOutput.slice(0, 500)}`;
+        if (stderrOutput.trim()) {
+          lastError += `\nStderr: ${stderrOutput.slice(0, 300)}`;
         }
-        console.error("[opencode-server]", lastError);
       }
       serverProcess = null;
       serverReady = false;
     });
   } catch (err) {
     lastError = `Exception starting opencode: ${err instanceof Error ? err.message : String(err)}`;
-    console.error("[opencode-server]", lastError);
     serverProcess = null;
     serverReady = false;
     return false;
   }
 
-  const success = await waitForServer(20000);
-  if (!success && lastError) {
-    console.error("[opencode-server] Failed to start:", lastError);
-  }
+  const success = await waitForServer(25000);
   return success;
 }
 
 export function stopServer(): void {
+  isShuttingDown = true;
   if (serverProcess) {
-    serverProcess.kill("SIGTERM");
-    // Force kill after 5 seconds
-    setTimeout(() => {
-      if (serverProcess) {
-        serverProcess.kill("SIGKILL");
+    try {
+      if (process.platform === "win32") {
+        // On Windows, kill the process tree
+        const pid = serverProcess.pid;
+        if (pid) {
+          try {
+            execSync(`taskkill /F /T /PID ${pid}`, { windowsHide: true, timeout: 3000 });
+          } catch {}
+        }
+      } else {
+        serverProcess.kill("SIGTERM");
       }
-    }, 5000);
+    } catch {}
     serverProcess = null;
     serverReady = false;
   }
 }
-
-// Cleanup on exit
-process.on("exit", () => stopServer());
-process.on("SIGINT", () => { stopServer(); process.exit(0); });
-process.on("SIGTERM", () => { stopServer(); process.exit(0); });
