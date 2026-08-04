@@ -11,11 +11,26 @@ export interface UpdateInfo {
   url: string;
 }
 
+function parseSemver(v: string): [number, number, number] {
+  const parts = v.replace(/^v/, "").split(".").map(Number);
+  return [parts[0] ?? 0, parts[1] ?? 0, parts[2] ?? 0];
+}
+
+function isNewer(latest: string, current: string): boolean {
+  const [aMajor, aMinor, aPatch] = parseSemver(latest);
+  const [bMajor, bMinor, bPatch] = parseSemver(current);
+  if (aMajor !== bMajor) return aMajor > bMajor;
+  if (aMinor !== bMinor) return aMinor > bMinor;
+  return aPatch > bPatch;
+}
+
 export async function checkForUpdate(): Promise<UpdateInfo | null> {
   try {
     const res = await fetch(`https://api.github.com/repos/${REPO}/releases/latest`, {
       headers: { Accept: "application/vnd.github.v3+json" },
+      signal: AbortSignal.timeout(8000),
     });
+
     if (!res.ok) return null;
 
     const release = (await res.json()) as {
@@ -23,8 +38,10 @@ export async function checkForUpdate(): Promise<UpdateInfo | null> {
       html_url: string;
     };
 
+    if (!release?.tag_name) return null;
+
     const tag = release.tag_name.replace(/^v/, "");
-    if (tag === VERSION) return null;
+    if (!isNewer(tag, VERSION)) return null;
 
     return {
       version: tag,
