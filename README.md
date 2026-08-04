@@ -12,16 +12,16 @@
 
 ## Installation
 
-Run the installation script via PowerShell:
+Run the installation script via PowerShell (bypasses cache to always fetch latest):
 
 ```powershell
-iwr -useb https://raw.githubusercontent.com/itarqos5/codejet/main/install.ps1 | iex
+$h = @{ 'Cache-Control' = 'no-cache' }; iwr -useb "https://raw.githubusercontent.com/itarqos5/codejet/main/install.ps1" -Headers $h | iex
 ```
 
 Or for development/testing the UI:
 
 ```powershell
-iwr -useb https://raw.githubusercontent.com/itarqos5/codejet/main/install-dev.ps1 | iex
+$h = @{ 'Cache-Control' = 'no-cache' }; iwr -useb "https://raw.githubusercontent.com/itarqos5/codejet/main/install-dev.ps1" -Headers $h | iex
 ```
 
 ## Usage
