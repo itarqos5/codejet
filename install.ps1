@@ -6,20 +6,18 @@
     Must be run as Administrator.
 .NOTES
     Author: Itarqos
-    Version: 1.2.0
+    Version: 1.3.0
 #>
 
-# --- Elevation Check ---
+# --- Elevation Check (no auto-elevation: stays in the current window) ---
 $currentPrincipal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
 if (-not $currentPrincipal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
-    Write-Host "Requesting administrator privileges..." -ForegroundColor Yellow
-    $scriptPath = $MyInvocation.MyCommand.Path
-    if ($scriptPath) {
-        Start-Process powershell.exe -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$scriptPath`"" -Verb RunAs -Wait
-    } else {
-        Write-Host "[X] This script must be run as Administrator." -ForegroundColor Red
-    }
-    exit
+    Write-Host "  [X] This script must be run as Administrator." -ForegroundColor Red
+    Write-Host ""
+    Write-Host "  Right-click 'PowerShell' and choose 'Run as administrator',"
+    Write-Host "  then run the install command again in that window."
+    Write-Host ""
+    exit 1
 }
 
 $ErrorActionPreference = "Stop"
@@ -84,17 +82,21 @@ function Show-ProgressBar {
 function Prompt-YesNo {
     param([string]$Prompt, [bool]$Default = $true)
     $suffix = if ($Default) { " [Y/n] " } else { " [y/N] " }
-    Write-Host ($AnsiCyan + $Prompt + $suffix + $AnsiReset) -NoNewline
-    try {
-        $key = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
-        Write-Host ""
-        $ch = $key.KeyChar
-        if ($ch -eq 'y' -or $ch -eq 'Y') { return $true }
-        if ($ch -eq 'n' -or $ch -eq 'N') { return $false }
-        return $Default
-    } catch {
-        Write-Host ""
-        return $Default
+    while ($true) {
+        Write-Host ($AnsiCyan + $Prompt + $suffix + $AnsiReset) -NoNewline
+        $choice = ""
+        try {
+            $key = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
+            Write-Host ""
+            $choice = [string]$key.KeyChar
+        } catch {
+            Write-Host ""
+            try { $choice = [string](Read-Host) } catch { $choice = "" }
+        }
+        if ($choice -match '^[yY]') { return $true }
+        if ($choice -match '^[nN]') { return $false }
+        if ($choice -eq "`r" -or $choice -eq "`n" -or $choice -eq "") { return $Default }
+        Write-Warning "Please press Y (yes) or N (no)."
     }
 }
 
@@ -148,6 +150,30 @@ function Install-ViaWinget {
         Write-Error "Failed to install $Name via winget"
         return $false
     }
+}
+
+function Get-ProviderToken {
+    param($Auth, [string]$Provider, [string[]]$Keys)
+    if ($null -eq $Auth) { return $null }
+    $entry = $Auth.PSObject.Properties[$Provider]
+    if ($null -eq $entry -or $null -eq $entry.Value) { return $null }
+    foreach ($keyName in $Keys) {
+        $val = $entry.Value.PSObject.Properties[$keyName]
+        if ($null -ne $val -and $null -ne $val.Value -and [string]$val.Value -ne "") {
+            return [string]$val.Value
+        }
+    }
+    return $null
+}
+
+function Read-OpencodeToken {
+    param($Auth)
+    return Get-ProviderToken $Auth "opencode" @("key", "access", "token")
+}
+
+function Read-KiloToken {
+    param($Auth)
+    return Get-ProviderToken $Auth "kilo" @("access", "token", "key")
 }
 
 # --- Main Installation Flow ---
@@ -256,13 +282,13 @@ $kiloAuthPaths = @(
 $opencodeToken = $null
 $kiloToken = $null
 
-# Check OpenCode auth
+# Check OpenCode auth (reads the "opencode" provider, never "opencode-go")
 foreach ($path in $opencodeAuthPaths) {
     if (Test-Path $path) {
         try {
             $auth = Get-Content $path -Raw | ConvertFrom-Json
-            if ($auth.token) { $opencodeToken = $auth.token; break }
-            if ($auth.access_token) { $opencodeToken = $auth.access_token; break }
+            $token = Read-OpencodeToken $auth
+            if ($token) { $opencodeToken = $token; break }
         } catch { }
     }
 }
@@ -272,8 +298,8 @@ foreach ($path in $kiloAuthPaths) {
     if (Test-Path $path) {
         try {
             $auth = Get-Content $path -Raw | ConvertFrom-Json
-            if ($auth.token) { $kiloToken = $auth.token; break }
-            if ($auth.access_token) { $kiloToken = $auth.access_token; break }
+            $token = Read-KiloToken $auth
+            if ($token) { $kiloToken = $token; break }
         } catch { }
     }
 }
@@ -309,8 +335,8 @@ if ($needLogin) {
                 if (Test-Path $path) {
                     try {
                         $auth = Get-Content $path -Raw | ConvertFrom-Json
-                        if ($auth.token) { $opencodeToken = $auth.token; break }
-                        if ($auth.access_token) { $opencodeToken = $auth.access_token; break }
+                        $token = Read-OpencodeToken $auth
+                        if ($token) { $opencodeToken = $token; break }
                     } catch { }
                 }
             }
@@ -323,8 +349,8 @@ if ($needLogin) {
                 if (Test-Path $path) {
                     try {
                         $auth = Get-Content $path -Raw | ConvertFrom-Json
-                        if ($auth.token) { $kiloToken = $auth.token; break }
-                        if ($auth.access_token) { $kiloToken = $auth.access_token; break }
+                        $token = Read-KiloToken $auth
+                        if ($token) { $kiloToken = $token; break }
                     } catch { }
                 }
             }
@@ -333,6 +359,9 @@ if ($needLogin) {
         Write-Info "Skipping authentication. Some features may not work."
     }
 }
+
+if ($opencodeToken) { Write-Success "OpenCode authentication token found" }
+if ($kiloToken) { Write-Success "Kilo Code authentication token found" }
 
 # Save tokens to keys.json
 if ($opencodeToken -or $kiloToken) {
