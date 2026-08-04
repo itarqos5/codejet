@@ -1,6 +1,6 @@
 import { loadKeys } from "./keys.js";
 
-const DEFAULT_BASE = "http://localhost:3000";
+const DEFAULT_BASE = "http://127.0.0.1:4096";
 
 function baseUrl(): string {
   return process.env.OPENCODE_SERVER_URL ?? DEFAULT_BASE;
