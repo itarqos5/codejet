@@ -136,74 +136,39 @@ export function useMessageHandler({
 
     const ocModel = state.modelId.replace("opencode/", "");
 
-    dispatch({ type: "SET_STREAMING_CONTENT", content: "Sending to model..." });
+    dispatch({ type: "SET_STREAMING_CONTENT", content: `Sending to ${ocModel}...` });
 
-    // Send the message
+    // Send the message and retain the prompt ID/time so older assistant messages
+    // cannot be mistaken for the response to this request.
+    let sent: Awaited<ReturnType<typeof oc.sendMessage>>;
     try {
       const sendPromise = oc.sendMessage(session.id, [{ type: "text", content: promptText }], { model: ocModel });
       const timeoutPromise = new Promise<never>((_, reject) => {
         const id = setTimeout(() => reject(new Error("Timed out sending message to OpenCode (30s)")), 30000);
-        signal.addEventListener("abort", () => { clearTimeout(id); reject(new Error("Aborted")); }, { once: true });
+        signal.addEventListener("abort", () => {
+          clearTimeout(id);
+          reject(new Error("Aborted"));
+        }, { once: true });
       });
-
-      await Promise.race([sendPromise, timeoutPromise]);
+      sent = await Promise.race([sendPromise, timeoutPromise]);
     } catch (err) {
       if (signal.aborted) throw new Error("Aborted");
       throw new Error(`Failed to send message: ${err instanceof Error ? err.message : String(err)}`);
     }
 
-    dispatch({ type: "SET_STREAMING_CONTENT", content: "Waiting for response..." });
+    dispatch({ type: "SET_STREAMING_CONTENT", content: `Waiting for ${ocModel} response...` });
 
-    // Poll for response with visual feedback
-    const pollStart = Date.now();
-    const deadline = pollStart + 120000; // 2 minutes
-    let fullContent = "";
-    let lastPollContent = "";
+    const assistantMsg = await oc.waitForAssistantMessage(
+      session.id,
+      sent.id,
+      sent.timeCreated,
+      120000,
+      1500,
+    );
 
-    while (Date.now() < deadline) {
-      if (signal.aborted) throw new Error("Aborted");
+    if (signal.aborted) throw new Error("Aborted");
 
-      try {
-        const msgs = await oc.listMessages(session.id, 20);
-
-        // Find assistant messages
-        const assistantMsgs = msgs.filter(
-          (m) => m.type === "assistant" || m.role === "assistant",
-        );
-
-        if (assistantMsgs.length > 0) {
-          const last = assistantMsgs[assistantMsgs.length - 1];
-          const text = last.text ?? last.parts?.map((p) => p.content ?? p.text ?? "").join("") ?? "";
-
-          if (text && text.trim().length > 0) {
-            fullContent = text;
-            // Show progressive content while waiting
-            dispatch({ type: "SET_STREAMING_CONTENT", content: fullContent });
-
-            // Check if the message is complete (has completion time or no new content after 3s)
-            if (last.time?.completed) {
-              break;
-            }
-
-            // If content hasn't changed in 3 seconds, assume complete
-            if (lastPollContent === fullContent) {
-              break;
-            }
-            lastPollContent = fullContent;
-          }
-        }
-      } catch {
-        // Polling error - keep trying
-      }
-
-      // Show elapsed time in streaming content
-      const elapsed = Math.round((Date.now() - pollStart) / 1000);
-      if (!fullContent && elapsed > 5) {
-        dispatch({ type: "SET_STREAMING_CONTENT", content: `Waiting for ${ocModel} response... (${elapsed}s)` });
-      }
-
-      await new Promise((r) => setTimeout(r, 1500));
-    }
+    const fullContent = assistantMsg ? oc.getMessageText(assistantMsg) : "";
 
     if (fullContent) {
       dispatch({ type: "SET_STREAMING_CONTENT", content: fullContent });
@@ -240,7 +205,7 @@ export function useMessageHandler({
         }
       }
     } else {
-      throw new Error("OpenCode returned an empty response. The model may have encountered an issue.");
+      throw new Error(`OpenCode did not complete a response from ${ocModel} within 120 seconds.`);
     }
   }
 

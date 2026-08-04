@@ -12,8 +12,6 @@ export interface FreeModel {
 }
 
 export const OPENCODE_MODELS: FreeModel[] = [
-  { id: "opencode/big-pickle", name: "Big Pickle", provider: "opencode", maxContext: 200000 },
-  { id: "opencode/grok-code", name: "Grok Code Fast 1", provider: "opencode", maxContext: 256000 },
   { id: "opencode/deepseek-v4-flash-free", name: "DeepSeek V4 Flash", provider: "opencode", maxContext: 200000 },
   { id: "opencode/mimo-v2.5-free", name: "MiMo V2.5", provider: "opencode", maxContext: 200000 },
   { id: "opencode/mimo-v2-pro-free", name: "MiMo V2 Pro", provider: "opencode", maxContext: 1048576 },

@@ -1,33 +1,24 @@
 import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
 import { readFileSync, existsSync } from "node:fs";
-import { join, dirname } from "node:path";
+import { join } from "node:path";
 
 const execFileAsync = promisify(execFile);
 const REPO = "itarqos5/codejet";
+const APP_ROOT = join(import.meta.dirname, "../..");
 
-function getVersion(): string {
+function readVersion(root = APP_ROOT): string {
   try {
-    // Try multiple possible paths for package.json
-    const possiblePaths = [
-      join(import.meta.dirname, "../../package.json"),
-      join(import.meta.dirname, "../package.json"),
-      join(process.cwd(), "package.json"),
-    ];
-    
-    for (const pkgPath of possiblePaths) {
-      if (existsSync(pkgPath)) {
-        const pkg = JSON.parse(readFileSync(pkgPath, "utf-8"));
-        return pkg.version || "0.0.0";
-      }
-    }
-    return "0.0.0";
+    const pkgPath = join(root, "package.json");
+    if (!existsSync(pkgPath)) return "0.0.0";
+    const pkg = JSON.parse(readFileSync(pkgPath, "utf-8")) as { version?: string };
+    return pkg.version ?? "0.0.0";
   } catch {
     return "0.0.0";
   }
 }
 
-export const VERSION = getVersion();
+export const VERSION = readVersion();
 
 export interface UpdateInfo {
   version: string;
@@ -50,12 +41,11 @@ function isNewer(latest: string, current: string): boolean {
 
 // Try multiple GitHub endpoints for fetching version
 async function fetchRemoteVersion(): Promise<string | null> {
+  // The updater installs from main, so use main/package.json as the source of truth.
+  // Releases can lag behind main and would otherwise hide newer commits.
   const endpoints = [
-    // Try GitHub API first (most reliable)
-    `https://api.github.com/repos/${REPO}/releases/latest`,
-    // Fallback to raw package.json
     `https://raw.githubusercontent.com/${REPO}/main/package.json`,
-    // Try main branch directly
+    `https://api.github.com/repos/${REPO}/releases/latest`,
     `https://raw.githubusercontent.com/${REPO}/master/package.json`,
   ];
 
@@ -127,55 +117,73 @@ export interface UpdateProgress {
   percent: number;
 }
 
-// Shell-aware exec that works on Windows (fixes ENOENT for npm/git)
 async function shellExec(
   cmd: string,
   args: string[],
+  cwd = APP_ROOT,
 ): Promise<{ stdout: string; stderr: string }> {
   const isWindows = process.platform === "win32";
+  const options = {
+    cwd,
+    windowsHide: true,
+    timeout: 120000,
+  };
+
   if (isWindows) {
-    // On Windows, run through cmd.exe to resolve PATH correctly
-    return execFileAsync("cmd.exe", ["/c", cmd, ...args], {
-      windowsHide: true,
-      timeout: 120000,
-    });
+    return execFileAsync("cmd.exe", ["/d", "/s", "/c", cmd, ...args], options);
   }
-  return execFileAsync(cmd, args, { timeout: 120000 });
+  return execFileAsync(cmd, args, options);
 }
 
 export async function installUpdate(
+  expectedVersion?: string,
   onProgress?: (progress: UpdateProgress) => void,
 ): Promise<boolean> {
   try {
-    onProgress?.({ task: "Fetching latest from origin...", percent: 5 });
+    if (!existsSync(join(APP_ROOT, ".git"))) {
+      throw new Error(`CodeJet installation is not a Git checkout: ${APP_ROOT}`);
+    }
+
+    onProgress?.({ task: "Fetching the latest CodeJet source...", percent: 5 });
     await shellExec("git", ["fetch", "origin", "main"]);
 
-    onProgress?.({ task: "Pulling updates...", percent: 20 });
-    await shellExec("git", ["pull", "origin", "main"]);
+    onProgress?.({ task: "Applying the latest CodeJet source...", percent: 25 });
+    await shellExec("git", ["pull", "--ff-only", "origin", "main"]);
 
-    onProgress?.({ task: "Installing dependencies...", percent: 45 });
+    const pulledVersion = readVersion();
+    if (expectedVersion && pulledVersion !== expectedVersion) {
+      throw new Error(`Source updated, but installed package is v${pulledVersion}; expected v${expectedVersion}`);
+    }
+
+    onProgress?.({ task: "Installing dependencies...", percent: 50 });
     await shellExec("npm", ["install"]);
 
-    onProgress?.({ task: "Building project...", percent: 75 });
+    onProgress?.({ task: "Building the updated application...", percent: 75 });
     await shellExec("npm", ["run", "build"]);
 
-    onProgress?.({ task: "Finalizing...", percent: 95 });
-    // Small delay for visual feedback
-    await new Promise((r) => setTimeout(r, 500));
+    const builtVersion = readVersion();
+    if (expectedVersion && builtVersion !== expectedVersion) {
+      throw new Error(`Build completed with v${builtVersion}; expected v${expectedVersion}`);
+    }
 
-    onProgress?.({ task: "Update complete!", percent: 100 });
+    onProgress?.({ task: "Update installed successfully.", percent: 100 });
     return true;
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    onProgress?.({ task: `Error: ${message}`, percent: -1 });
+    onProgress?.({ task: `Update failed: ${message}`, percent: -1 });
     return false;
   }
 }
 
 export function restartApp(): void {
-  const bin = process.argv[0];
+  const bin = process.execPath;
   const args = process.argv.slice(1);
-  const child = spawn(bin, args, { detached: true, stdio: "ignore" });
+  const child = spawn(bin, args, {
+    cwd: APP_ROOT,
+    detached: true,
+    stdio: "ignore",
+    windowsHide: true,
+  });
   child.unref();
   process.exit(0);
 }

@@ -80,11 +80,24 @@ export interface MessagePart {
 export interface Message {
   id: string;
   type?: string;
-  text?: string;
   role?: string;
+  agent?: string;
   sessionID?: string;
   time?: { created: number; completed?: number };
+  text?: string;
+  content?: MessagePart[];
   parts?: MessagePart[];
+  finish?: string;
+  [key: string]: unknown;
+}
+
+export function getMessageText(message: Message): string {
+  if (typeof message.text === "string") return message.text;
+  const parts = message.content ?? message.parts ?? [];
+  return parts
+    .filter((part) => part.type === "text" || part.content != null || part.text != null)
+    .map((part) => part.content ?? part.text ?? "")
+    .join("");
 }
 
 export interface PromptResponse {
@@ -159,41 +172,34 @@ export async function listMessages(sessionID: string, limit?: number): Promise<M
 // Poll for assistant response with better timeout handling
 export async function waitForAssistantMessage(
   sessionID: string,
-  lastMessageId: string | null,
+  afterMessageId: string,
+  afterTime: number,
   timeoutMs = 120000,
   pollIntervalMs = 1500,
 ): Promise<Message | null> {
   const deadline = Date.now() + timeoutMs;
-  
+
   while (Date.now() < deadline) {
     try {
       const msgs = await listMessages(sessionID, 50);
-      
-      // Find messages after our last known message
-      const newMessages = lastMessageId
-        ? msgs.filter((m) => {
-            const idx = msgs.findIndex((msg) => msg.id === lastMessageId);
-            return msgs.indexOf(m) > idx;
-          })
-        : msgs;
+      const assistantMessages = msgs
+        .filter((message) => {
+          const isAssistant = message.type === "assistant" || message.role === "assistant";
+          const isAfterPrompt = message.id !== afterMessageId &&
+            (message.time?.created ?? 0) >= afterTime;
+          return isAssistant && isAfterPrompt;
+        })
+        .sort((a, b) => (b.time?.created ?? 0) - (a.time?.created ?? 0));
 
-      // Look for assistant messages
-      const assistantMsg = newMessages.find(
-        (m) => m.type === "assistant" || m.role === "assistant",
-      );
-
-      if (assistantMsg) {
-        // Check if message has content
-        const text = assistantMsg.text ?? assistantMsg.parts?.map((p) => p.content ?? p.text ?? "").join("");
-        if (text && text.trim().length > 0) {
-          return assistantMsg;
-        }
+      const latest = assistantMessages[0];
+      if (latest && getMessageText(latest).trim() && (latest.time?.completed || latest.finish)) {
+        return latest;
       }
-    } catch (err) {
-      console.error("[opencode] Error polling messages:", err);
+    } catch (error) {
+      console.error("[opencode] Error polling messages:", error);
     }
 
-    await new Promise((r) => setTimeout(r, pollIntervalMs));
+    await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
   }
 
   return null;

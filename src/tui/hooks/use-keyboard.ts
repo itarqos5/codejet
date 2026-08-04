@@ -63,7 +63,7 @@ export function useKeyboard({
       if (key.return) {
         dispatch({ type: "SET_UPDATE_PHASE", phase: "installing" });
         import("../../api/updater.js").then((mod) => {
-          mod.installUpdate(({ task, percent }) => {
+          mod.installUpdate(state.updateAvailable ?? undefined, ({ task, percent }) => {
             dispatch({ type: "SET_UPDATE_PROGRESS", task, percent });
           }).then((ok) => {
             dispatch({ type: "SET_UPDATE_PHASE", phase: ok ? "done" : "error" });
@@ -74,7 +74,7 @@ export function useKeyboard({
         });
         return;
       }
-      if (key.escape) {
+      if (key.escape || input.toLowerCase() === "x") {
         dispatch({ type: "SET_UPDATE_AVAILABLE", version: null });
         dispatch({ type: "SET_UPDATE_PHASE", phase: "idle" });
         return;

@@ -152,7 +152,7 @@ export default function App() {
   }, [state.error]);
 
   return (
-    <Box flexDirection="column" width="100%" height="100%">
+    <Box flexDirection="column" width="100%" height="100%" position="relative">
       {modalMode !== "none" ? (
         <>
           {modalMode === "command" && (
@@ -187,7 +187,7 @@ export default function App() {
               onInstall={() => {
                 dispatch({ type: "SET_UPDATE_PHASE", phase: "installing" });
                 import("../api/updater.js").then((mod) => {
-                  mod.installUpdate(({ task, percent }) => {
+                  mod.installUpdate(state.updateAvailable ?? undefined, ({ task, percent }) => {
                     dispatch({ type: "SET_UPDATE_PROGRESS", task, percent });
                   }).then((ok) => {
                     dispatch({ type: "SET_UPDATE_PHASE", phase: ok ? "done" : "error" });
