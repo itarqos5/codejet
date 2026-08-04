@@ -60,7 +60,9 @@ export interface AppState {
   error: string | null;
   updateAvailable: string | null;
   updatePhase: UpdatePhase;
-  updateLog: string[];
+  updateTask: string;
+  updateProgress: number;
+  updateError: string | null;
 }
 
 export type AppAction =
@@ -79,7 +81,9 @@ export type AppAction =
   | { type: "SET_CONTEXT_TOKENS"; used: number; max: number }
   | { type: "SET_ERROR"; error: string | null }
   | { type: "SET_UPDATE_AVAILABLE"; version: string | null }
-  | { type: "SET_UPDATE_PHASE"; phase: UpdatePhase; log?: string }
+  | { type: "SET_UPDATE_PHASE"; phase: UpdatePhase }
+  | { type: "SET_UPDATE_PROGRESS"; task: string; percent: number }
+  | { type: "SET_UPDATE_ERROR"; error: string }
   | { type: "CLEAR_MESSAGES" };
 
 export function appReducer(state: AppState, action: AppAction): AppState {
@@ -118,7 +122,18 @@ export function appReducer(state: AppState, action: AppAction): AppState {
       return {
         ...state,
         updatePhase: action.phase,
-        updateLog: action.log ? [...state.updateLog, action.log] : state.updateLog,
+      };
+    case "SET_UPDATE_PROGRESS":
+      return {
+        ...state,
+        updateTask: action.task,
+        updateProgress: action.percent,
+      };
+    case "SET_UPDATE_ERROR":
+      return {
+        ...state,
+        updatePhase: "error",
+        updateError: action.error,
       };
     case "CLEAR_MESSAGES":
       return { ...state, messages: [], streamingContent: "", contextTokensUsed: 0 };
@@ -146,5 +161,7 @@ export const INITIAL_STATE: AppState = {
   error: null,
   updateAvailable: null,
   updatePhase: "idle",
-  updateLog: [],
+  updateTask: "",
+  updateProgress: 0,
+  updateError: null,
 };
