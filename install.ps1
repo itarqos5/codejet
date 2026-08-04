@@ -1,24 +1,16 @@
-﻿<# 
+<#
 .SYNOPSIS
     CodeJet Production Installation Script
 .DESCRIPTION
-    Installs CodeJet CLI tool with OpenCode & Kilo Code integration
+    Installs CodeJet CLI tool with OpenCode and Kilo Code integration
 .NOTES
     Author: Itarqos
-    Version: 1.0.0
+    Version: 1.1.0
 #>
 
 $ErrorActionPreference = "Stop"
 
-# ─── Color Definitions ───
-$Cyan = [System.ConsoleColor]::Cyan
-$Green = [System.ConsoleColor]::Green
-$Yellow = [System.ConsoleColor]::Yellow
-$Red = [System.ConsoleColor]::Red
-$White = [System.ConsoleColor]::White
-$Gray = [System.ConsoleColor]::DarkGray
-$Reset = [System.ConsoleColor]::Gray
-
+# --- Color Definitions ---
 $esc = [char]27
 $AnsiCyan = "$esc[36m"
 $AnsiGreen = "$esc[32m"
@@ -28,12 +20,12 @@ $AnsiReset = "$esc[0m"
 $AnsiBold = "$esc[1m"
 $AnsiDim = "$esc[2m"
 
-# ─── Helper Functions ───
+# --- Helper Functions ---
 function Write-Banner {
     param([string]$Text)
     $width = 60
     $padding = [math]::Max(0, ($width - $Text.Length) / 2)
-    $line = "═" * $width
+    $line = "=" * $width
     Write-Host ""
     Write-Host ($AnsiCyan + $line + $AnsiReset)
     Write-Host ($AnsiCyan + " " * $padding + $AnsiBold + $Text + $AnsiReset + $AnsiCyan + " " * ($width - $padding - $Text.Length) + $AnsiReset)
@@ -43,34 +35,34 @@ function Write-Banner {
 
 function Write-Step {
     param([string]$Step, [string]$Message)
-    Write-Host ($AnsiCyan + "▶ " + $AnsiBold + "Step $Step" + $AnsiReset + $AnsiCyan + ": " + $Message + $AnsiReset)
+    Write-Host ($AnsiCyan + ">> " + $AnsiBold + "Step $Step" + $AnsiReset + $AnsiCyan + ": " + $Message + $AnsiReset)
 }
 
 function Write-Success {
     param([string]$Message)
-    Write-Host ($AnsiGreen + "  ✓ " + $Message + $AnsiReset)
+    Write-Host ($AnsiGreen + "  [OK] " + $Message + $AnsiReset)
 }
 
 function Write-Warning {
     param([string]$Message)
-    Write-Host ($AnsiYellow + "  ⚠ " + $Message + $AnsiReset)
+    Write-Host ($AnsiYellow + "  [!] " + $Message + $AnsiReset)
 }
 
 function Write-Error {
     param([string]$Message)
-    Write-Host ($AnsiRed + "  ✗ " + $Message + $AnsiReset)
+    Write-Host ($AnsiRed + "  [X] " + $Message + $AnsiReset)
 }
 
 function Write-Info {
     param([string]$Message)
-    Write-Host ($AnsiDim + "  ℹ " + $Message + $AnsiReset)
+    Write-Host ($AnsiDim + "  [i] " + $Message + $AnsiReset)
 }
 
 function Show-ProgressBar {
     param([string]$Title, [int]$Percent, [int]$Width = 40)
     $filled = [math]::Floor($Width * $Percent / 100)
     $empty = $Width - $filled
-    $bar = $AnsiCyan + "█" * $filled + $AnsiDim + "░" * $empty + $AnsiReset
+    $bar = $AnsiCyan + "#" * $filled + $AnsiDim + "-" * $empty + $AnsiReset
     Write-Host ("`r$Title [$bar] $Percent%") -NoNewline
     if ($Percent -ge 100) { Write-Host "" }
 }
@@ -98,7 +90,7 @@ function Prompt-Menu {
         while ($true) {
             Write-Host ($AnsiCyan + $Prompt + $AnsiReset)
             for ($i = 0; $i -lt $Options.Length; $i++) {
-                $prefix = if ($i -eq $selected) { $AnsiCyan + "▶ " + $AnsiBold } else { "  " }
+                $prefix = if ($i -eq $selected) { $AnsiCyan + "> " + $AnsiBold } else { "  " }
                 $suffix = if ($i -eq $selected) { $AnsiReset } else { "" }
                 Write-Host ("$prefix$($Options[$i])$suffix")
             }
@@ -143,10 +135,10 @@ function Install-ViaWinget {
     }
 }
 
-# ─── Main Installation Flow ───
+# --- Main Installation Flow ---
 Write-Banner "CodeJet Installation"
 
-# ─── Step 1: System Dependency Checks ───
+# --- Step 1: System Dependency Checks ---
 Write-Step "1/5" "Checking system dependencies..."
 
 $hasNode = Check-Command "node"
@@ -188,35 +180,38 @@ if (-not $hasGit) {
     Write-Success "Git found: $gitVersion"
 }
 
-# ─── Step 2: OpenCode & Kilo Code CLI Check & Auth Setup ───
-Write-Step "2/5" "Checking OpenCode & Kilo Code CLI..."
+# --- Step 2: OpenCode and Kilo Code CLI Check and Auth Setup ---
+Write-Step "2/5" "Checking OpenCode and Kilo Code CLI..."
 
 $hasOpencode = Check-Command "opencode"
 $hasKilo = Check-Command "kilo"
 
 if (-not $hasOpencode -or -not $hasKilo) {
-    Write-Warning "Missing CLI tools: $([string]::Join(', ', @((if (-not $hasOpencode) { 'opencode' }), (if (-not $hasKilo) { 'kilo' }))))"
-    
+    $missing = @()
+    if (-not $hasOpencode) { $missing += "opencode" }
+    if (-not $hasKilo) { $missing += "kilo" }
+    Write-Warning "Missing CLI tools: $([string]::Join(", ", $missing))"
+
     $menuChoice = Prompt-Menu "Install missing CLI tools globally via npm?" @(
-        "Install OpenCode & Kilo Code",
+        "Install OpenCode and Kilo Code",
         "Cancel Installation"
     )
-    
+
     if ($menuChoice -eq 1) {
         Write-Info "Installation cancelled by user."
         exit 0
     }
-    
-    Write-Step "2a" "Installing OpenCode & Kilo Code globally..."
+
+    Write-Step "2a" "Installing OpenCode and Kilo Code globally..."
     Show-ProgressBar "Installing opencode" 0
     npm install -g opencode 2>$null | Out-Null
     Show-ProgressBar "Installing opencode" 50
     npm install -g @kilocode/cli 2>$null | Out-Null
     Show-ProgressBar "Installing @kilocode/cli" 100
-    
+
     $hasOpencode = Check-Command "opencode"
     $hasKilo = Check-Command "kilo"
-    
+
     if ($hasOpencode) { Write-Success "OpenCode installed" } else { Write-Error "OpenCode installation failed" }
     if ($hasKilo) { Write-Success "Kilo Code installed" } else { Write-Error "Kilo Code installation failed" }
 } else {
@@ -224,7 +219,7 @@ if (-not $hasOpencode -or -not $hasKilo) {
     Write-Success "Kilo Code CLI found"
 }
 
-# ─── Step 3: Auth / Token Extraction ───
+# --- Step 3: Auth / Token Extraction ---
 Write-Step "3/5" "Checking authentication tokens..."
 
 $codejetDir = "$env:USERPROFILE\.codejet"
@@ -289,7 +284,7 @@ if (-not $kiloToken) {
 if ($needLogin) {
     if (Prompt-YesNo "No active login found for OpenCode/Kilo Code. Would you like to log in now?") {
         Write-Step "3a" "Initiating interactive login..."
-        
+
         if (-not $opencodeToken) {
             Write-Info "Opening OpenCode login..."
             opencode auth login
@@ -304,7 +299,7 @@ if ($needLogin) {
                 }
             }
         }
-        
+
         if (-not $kiloToken) {
             Write-Info "Opening Kilo Code login..."
             kilo auth login
@@ -329,19 +324,19 @@ if ($opencodeToken -or $kiloToken) {
     if (-not (Test-Path $codejetDir)) {
         New-Item -ItemType Directory -Path $codejetDir -Force | Out-Null
     }
-    
+
     $kiloValue = if ($kiloToken) { $kiloToken } else { "" }
     $opencodeValue = if ($opencodeToken) { $opencodeToken } else { "" }
     $keys = @{
         kilo_token = $kiloValue
         opencode_token = $opencodeValue
     } | ConvertTo-Json -Depth 3
-    
+
     Set-Content -Path $keysPath -Value $keys -Encoding UTF8
     Write-Success "Authentication tokens saved to $keysPath"
 }
 
-# ─── Step 4: Repository & Dependency Setup ───
+# --- Step 4: Repository and Dependency Setup ---
 Write-Step "4/5" "Setting up CodeJet repository..."
 
 $repoUrl = "https://github.com/itarqos5/codejet.git"
@@ -382,13 +377,13 @@ if ($currentPath -notlike "*$codejetBin*") {
     Write-Success "Already in PATH"
 }
 
-# ─── Step 5: Completion ───
+# --- Step 5: Completion ---
 Write-Step "5/5" "Installation complete!"
 
 Write-Host ""
-Write-Banner "🎉 CodeJet installed successfully!"
+Write-Banner "CodeJet installed successfully!"
 Write-Host ($AnsiGreen + "  Run 'codejet' to use the CLI tool!" + $AnsiReset)
 Write-Host ($AnsiDim + "  Note: Restart your terminal for PATH changes to take effect." + $AnsiReset)
 Write-Host ""
 
-# ─── End ───
+# --- End ---
