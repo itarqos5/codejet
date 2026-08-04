@@ -155,49 +155,18 @@ Start-Sleep -Milliseconds 500
 # ─── Step 2: OpenCode & Kilo Code CLI Check (Mock) ───
 Write-Step "2/5" "Checking OpenCode & Kilo Code CLI (simulated)..."
 Simulate-Progress "Verifying CLI tools" 10 80
-Simulate-Check "opencode" $false
-Simulate-Check "kilo" $false
-
-Write-Warning "Missing CLI tools: opencode, kilo"
-
-$menuChoice = Prompt-Menu "Install missing CLI tools globally via npm? (simulated)" @(
-    "Install OpenCode & Kilo Code",
-    "Cancel Installation"
-)
-
-if ($menuChoice -eq 1) {
-    Write-Info "Installation cancelled by user (simulated)."
-    Write-Host ""
-    Write-Banner "Exit"
-    exit 0
-}
-
-Write-Step "2a" "Installing OpenCode & Kilo Code globally (simulated)..."
-Simulate-Progress "npm install -g opencode" 25 50
-Simulate-Progress "npm install -g @kilocode/cli" 25 50
-Write-Success "OpenCode installed (simulated)"
-Write-Success "Kilo Code installed (simulated)"
+Simulate-Check "opencode" $true "v2.x"
+Simulate-Check "kilo" $true "v1.x"
+Write-Success "OpenCode CLI found"
+Write-Success "Kilo Code CLI found"
 Start-Sleep -Milliseconds 500
 
 # ─── Step 3: Auth / Token Extraction (Mock) ───
 Write-Step "3/5" "Checking authentication tokens (simulated)..."
 Simulate-Progress "Reading auth configs" 10 80
 
-Write-Warning "No OpenCode authentication token found"
-Write-Warning "No Kilo Code authentication token found"
-
-$needLogin = Prompt-YesNo "No active login found for OpenCode/Kilo Code. Would you like to log in now? (simulated)"
-
-if ($needLogin) {
-    Write-Step "3a" "Initiating interactive login (simulated)..."
-    Write-Info "Opening OpenCode login... (simulated)"
-    Simulate-Progress "opencode auth login" 15 60
-    Write-Info "Opening Kilo Code login... (simulated)"
-    Simulate-Progress "kilo auth login" 15 60
-    Write-Success "Authentication complete (simulated)"
-} else {
-    Write-Info "Skipping authentication (simulated)."
-}
+Write-Success "OpenCode authentication token found"
+Write-Success "Kilo Code authentication token found"
 
 Write-Step "3b" "Saving tokens to keys.json (simulated)..."
 Simulate-Progress "Writing ~/.codejet/keys.json" 5 100
@@ -206,9 +175,9 @@ Start-Sleep -Milliseconds 500
 
 # ─── Step 4: Repository & Dependency Setup (Mock) ───
 Write-Step "4/5" "Setting up CodeJet repository (simulated)..."
-Simulate-Progress "git clone https://github.com/itarqos5/codejet.git" 15 50
+Simulate-Progress "Verifying ~/.codejet repository" 8 50
+Write-Success "Repository already present at ~/.codejet (simulated)"
 Simulate-Progress "npm install" 20 40
-Write-Success "Repository cloned to ~/.codejet (simulated)"
 Write-Success "Dependencies installed (simulated)"
 Simulate-Progress "Adding to PATH" 5 100
 Write-Success "Added to user PATH (simulated)"
