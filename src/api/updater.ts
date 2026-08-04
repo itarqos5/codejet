@@ -1,9 +1,22 @@
 import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
-import { VERSION } from "../tui/models.js";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 
 const execFileAsync = promisify(execFile);
 const REPO = "itarqos5/codejet";
+
+function getVersion(): string {
+  try {
+    const pkgPath = join(import.meta.dirname, "../../package.json");
+    const pkg = JSON.parse(readFileSync(pkgPath, "utf-8"));
+    return pkg.version;
+  } catch {
+    return "0.0.0";
+  }
+}
+
+export const VERSION = getVersion();
 
 export interface UpdateInfo {
   version: string;
@@ -31,24 +44,34 @@ export async function checkForUpdate(): Promise<UpdateInfo | null> {
       signal: AbortSignal.timeout(8000),
     });
 
-    if (!res.ok) return null;
+    if (!res.ok) {
+      console.error(`[updater] GitHub API returned ${res.status}`);
+      return null;
+    }
 
     const release = (await res.json()) as {
       tag_name: string;
       html_url: string;
     };
 
-    if (!release?.tag_name) return null;
+    if (!release?.tag_name) {
+      console.error("[updater] No tag_name in release");
+      return null;
+    }
 
     const tag = release.tag_name.replace(/^v/, "");
-    if (!isNewer(tag, VERSION)) return null;
+    if (!isNewer(tag, VERSION)) {
+      console.error(`[updater] Current v${VERSION} is up to date or newer than v${tag}`);
+      return null;
+    }
 
     return {
       version: tag,
       tag: release.tag_name,
       url: release.html_url,
     };
-  } catch {
+  } catch (err) {
+    console.error("[updater] Check failed:", err);
     return null;
   }
 }

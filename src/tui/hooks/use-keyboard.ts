@@ -42,6 +42,21 @@ export function useKeyboard({
       return;
     }
 
+    // Plan prompt - Enter to proceed, Esc to dismiss
+    if (state.pendingPlan) {
+      if (key.return) {
+        state.pendingPlan.resolve(true);
+        dispatch({ type: "SET_PENDING_PLAN", plan: null });
+        return;
+      }
+      if (key.escape) {
+        state.pendingPlan.resolve(false);
+        dispatch({ type: "SET_PENDING_PLAN", plan: null });
+        return;
+      }
+      return;
+    }
+
     // Update flow - Enter to install, Esc to dismiss
     if (state.updateAvailable && state.updatePhase === "idle") {
       if (key.return) {
@@ -104,9 +119,9 @@ export function useKeyboard({
       if (key.upArrow) {
         setModalIndex((prev) => Math.max(0, prev - 1));
       } else if (key.downArrow) {
-        setModalIndex((prev) => Math.min(4, prev + 1));
+        setModalIndex((prev) => Math.min(5, prev + 1));
       } else if (key.return) {
-        const action = ["new", "model", "compact", "todos", "clear"][modalIndex];
+        const action = ["new", "model", "compact", "todos", "clear", "check-update"][modalIndex];
         handleCommandAction(action);
         if (action !== "model") {
           setModalMode("none");

@@ -14,6 +14,7 @@ const COMMANDS: ModalOption[] = [
   { label: "Compact Conversation", description: "Summarize and compress chat history", action: "compact" },
   { label: "Show Todos", description: "View and manage your todo list", action: "todos" },
   { label: "Clear History", description: "Clear all messages", action: "clear" },
+  { label: "Check for Updates", description: "Check for a new version of CodeJet", action: "check-update" },
 ];
 
 interface SelectableItem {

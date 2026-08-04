@@ -71,7 +71,7 @@ export function useMessageHandler({
         dispatch({ type: "SET_STREAMING", streaming: false });
       }
     },
-    [state.modelId, state.messages, state.contextTokensUsed, currentModel],
+    [state.modelId, state.messages, state.contextTokensUsed, state.mode, currentModel],
   );
 
   const abortStream = useCallback(() => {
@@ -101,7 +101,9 @@ export function useMessageHandler({
     const session = await oc.createSession(undefined, "CodeJet Session");
 
     const parts = [
-      { type: "text" as const, content },
+      { type: "text" as const, content: state.mode === "plan"
+        ? `[PLAN MODE] Create a detailed implementation plan for: ${content}. Break into steps, describe files/functions, order of operations. Do NOT write code.`
+        : content },
     ];
 
     const ocModel = state.modelId.replace("opencode/", "");
@@ -138,6 +140,23 @@ export function useMessageHandler({
         used: Math.round(estimatedTokens),
         max: currentModel?.maxContext ?? 131072,
       });
+
+      if (state.mode === "plan") {
+        const proceed = await new Promise<boolean>((resolve) => {
+          dispatch({
+            type: "SET_PENDING_PLAN",
+            plan: {
+              id: genId(),
+              content: fullContent,
+              resolve,
+            },
+          });
+        });
+        dispatch({ type: "SET_PENDING_PLAN", plan: null });
+        if (proceed) {
+          dispatch({ type: "SET_MODE", mode: "build" });
+        }
+      }
     } else {
       throw new Error("OpenCode returned an empty response");
     }
@@ -158,15 +177,15 @@ export function useMessageHandler({
       return;
     }
 
+    const systemPrompt = state.mode === "plan"
+      ? "You are CodeJet in PLAN mode. The user will describe a coding task or project. Your job is to create a detailed implementation plan. Break the task into clear, actionable steps. Describe what files to create/modify, what functions to write, and the order of operations. Do NOT write code or make changes — only plan. When the user confirms, the plan will be handed to build mode for execution."
+      : "You are CodeJet, an AI coding assistant. You help users with software engineering tasks. When you need to ask the user a question, use the ask tool. When you create or modify files, describe what you did.";
+
     const { chatCompletionsStream } = await import("../../api/kilocode.js");
     const stream = await chatCompletionsStream({
       model: state.modelId,
       messages: [
-        {
-          role: "system",
-          content:
-            "You are CodeJet, an AI coding assistant. You help users with software engineering tasks. When you need to ask the user a question, use the ask tool. When you create or modify files, describe what you did.",
-        },
+        { role: "system", content: systemPrompt },
         ...state.messages.map((m) => ({
           role: m.role === "user" ? ("user" as const) : ("assistant" as const),
           content: m.content,
@@ -288,6 +307,23 @@ export function useMessageHandler({
         used: Math.round(estimatedTokens),
         max: currentModel?.maxContext ?? 131072,
       });
+
+      if (state.mode === "plan") {
+        const proceed = await new Promise<boolean>((resolve) => {
+          dispatch({
+            type: "SET_PENDING_PLAN",
+            plan: {
+              id: genId(),
+              content: fullContent,
+              resolve,
+            },
+          });
+        });
+        dispatch({ type: "SET_PENDING_PLAN", plan: null });
+        if (proceed) {
+          dispatch({ type: "SET_MODE", mode: "build" });
+        }
+      }
     }
   }
 

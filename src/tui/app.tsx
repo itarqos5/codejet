@@ -7,6 +7,7 @@ import { StatusBar } from "./components/statusbar.js";
 import { CommandModal, ModelSelector } from "./components/modal.js";
 import { TodoPanel } from "./components/todo.js";
 import { QuestionPrompt } from "./components/question.js";
+import { PlanPrompt } from "./components/plan-prompt.js";
 import { FileNotification } from "./components/file-notification.js";
 import { UpdateToast } from "./components/update-toast.js";
 import { UpdateModal } from "./components/update-modal.js";
@@ -73,6 +74,18 @@ export default function App() {
           dispatch({ type: "CLEAR_MESSAGES" });
           break;
         case "todos":
+          break;
+        case "check-update":
+          import("../api/updater.js").then((mod) => {
+            mod.checkForUpdate().then((info) => {
+              if (info) {
+                dispatch({ type: "SET_UPDATE_AVAILABLE", version: info.version });
+              } else {
+                dispatch({ type: "SET_ERROR", error: "No updates available. You're on the latest version." });
+                setTimeout(() => dispatch({ type: "SET_ERROR", error: null }), 3000);
+              }
+            });
+          });
           break;
       }
     },
@@ -180,6 +193,19 @@ export default function App() {
                 />
               )}
 
+              {state.pendingPlan && (
+                <PlanPrompt
+                  onProceed={() => {
+                    state.pendingPlan?.resolve(true);
+                    dispatch({ type: "SET_PENDING_PLAN", plan: null });
+                  }}
+                  onDismiss={() => {
+                    state.pendingPlan?.resolve(false);
+                    dispatch({ type: "SET_PENDING_PLAN", plan: null });
+                  }}
+                />
+              )}
+
               {state.error && (
                 <Box paddingLeft={2}>
                   <Text color="red" bold>
@@ -192,7 +218,7 @@ export default function App() {
                 mode={state.mode}
                 modelName={currentModel?.name ?? state.modelId}
                 onSubmit={handleSendMessage}
-                disabled={state.streaming || !!state.pendingQuestion}
+                disabled={state.streaming || !!state.pendingQuestion || !!state.pendingPlan}
                 messageCount={state.messages.length}
               />
             </Box>

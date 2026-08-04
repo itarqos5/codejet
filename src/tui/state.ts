@@ -28,6 +28,12 @@ export interface PendingQuestion {
   resolve: (answer: string) => void;
 }
 
+export interface PendingPlan {
+  id: string;
+  content: string;
+  resolve: (proceed: boolean) => void;
+}
+
 export type UpdatePhase = "idle" | "checking" | "installing" | "done" | "error";
 
 export interface AbortControllerRef {
@@ -44,6 +50,7 @@ export interface AppState {
   streamingContent: string;
   todos: Todo[];
   pendingQuestion: PendingQuestion | null;
+  pendingPlan: PendingPlan | null;
   showModal: boolean;
   modalIndex: number;
   inputFocused: boolean;
@@ -64,6 +71,7 @@ export type AppAction =
   | { type: "SET_STREAMING_CONTENT"; content: string }
   | { type: "SET_TODOS"; todos: Todo[] }
   | { type: "SET_PENDING_QUESTION"; question: PendingQuestion | null }
+  | { type: "SET_PENDING_PLAN"; plan: PendingPlan | null }
   | { type: "TOGGLE_MODAL" }
   | { type: "SET_MODAL_INDEX"; index: number }
   | { type: "SET_INPUT_FOCUSED"; focused: boolean }
@@ -91,6 +99,8 @@ export function appReducer(state: AppState, action: AppAction): AppState {
       return { ...state, todos: action.todos };
     case "SET_PENDING_QUESTION":
       return { ...state, pendingQuestion: action.question };
+    case "SET_PENDING_PLAN":
+      return { ...state, pendingPlan: action.plan };
     case "TOGGLE_MODAL":
       return { ...state, showModal: !state.showModal, modalIndex: 0 };
     case "SET_MODAL_INDEX":
@@ -126,6 +136,7 @@ export const INITIAL_STATE: AppState = {
   streamingContent: "",
   todos: [],
   pendingQuestion: null,
+  pendingPlan: null,
   showModal: false,
   modalIndex: 0,
   inputFocused: true,

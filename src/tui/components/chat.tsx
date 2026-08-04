@@ -1,5 +1,6 @@
-import React, { useRef, useEffect } from "react";
-import { Box, Text } from "ink";
+import React, { useState, useEffect } from "react";
+import { Box, Text, useInput } from "ink";
+import { MarkdownText } from "./markdown.js";
 import type { ChatMessage, FileChange } from "../state.js";
 
 function ToolCallDisplay({ message }: { message: ChatMessage }) {
@@ -51,7 +52,7 @@ function UserMessage({ message }: { message: ChatMessage }) {
       <Text color="blue" bold>
         User
       </Text>
-      <Text>{message.content}</Text>
+      <MarkdownText content={message.content} />
     </Box>
   );
 }
@@ -62,7 +63,7 @@ function AssistantMessage({ message }: { message: ChatMessage }) {
       <Text color="cyan" bold>
         {message.modelName ?? "assistant"}
       </Text>
-      <Text>{message.content}</Text>
+      <MarkdownText content={message.content} />
       {message.fileChanges && message.fileChanges.length > 0 && (
         <Box flexDirection="column" paddingTop={1}>
           {message.fileChanges.map((fc, i) => (
@@ -107,7 +108,7 @@ function StreamingMessage({ content, model }: { content: string; model: string }
           {" "}streaming...
         </Text>
       </Text>
-      <Text>{content}</Text>
+      <MarkdownText content={content} />
     </Box>
   );
 }
@@ -144,19 +145,63 @@ export function ChatArea({
   modelName: string;
   maxHeight: number;
 }) {
-  const scrollRef = useRef<number>(0);
+  const [scrollOffset, setScrollOffset] = useState(0);
+  const [isScrolling, setIsScrolling] = useState(false);
 
   useEffect(() => {
-    scrollRef.current = messages.length;
-  }, [messages.length]);
+    if (!isScrolling) {
+      setScrollOffset(0);
+    }
+  }, [messages.length, streamingContent, isScrolling]);
 
-  // Always show the latest messages that fit
-  const visibleMessages = messages.slice(-maxHeight);
+  useInput((input, key) => {
+    if (!isScrolling) return;
+
+    if (key.upArrow) {
+      setScrollOffset((prev) => {
+        const maxOffset = Math.max(0, messages.length - maxHeight + (streaming ? 1 : 0));
+        return Math.min(prev + 1, maxOffset);
+      });
+    } else if (key.downArrow) {
+      setScrollOffset((prev) => Math.max(0, prev - 1));
+    } else if (key.pageUp) {
+      setScrollOffset((prev) => {
+        const maxOffset = Math.max(0, messages.length - maxHeight + (streaming ? 1 : 0));
+        return Math.min(prev + maxHeight, maxOffset);
+      });
+    } else if (key.pageDown) {
+      setScrollOffset((prev) => Math.max(0, prev - maxHeight));
+    }
+  });
+
+  const totalItems = messages.length + (streaming && streamingContent ? 1 : 0);
+  const maxScroll = Math.max(0, totalItems - maxHeight);
+  const effectiveOffset = Math.min(scrollOffset, maxScroll);
+
+  const allItems: ChatMessage[] = [...messages];
+  if (streaming && streamingContent) {
+    allItems.push({
+      id: "__streaming__",
+      role: "assistant",
+      content: streamingContent,
+      timestamp: 0,
+      modelName,
+    });
+  }
+
+  const startIdx = Math.max(0, allItems.length - maxHeight - effectiveOffset);
+  const visibleItems = allItems.slice(startIdx, startIdx + maxHeight);
 
   return (
     <Box flexDirection="column" overflow="hidden" flexGrow={1}>
-      {visibleMessages.map((msg) => renderMessage(msg))}
-      {streaming && <StreamingMessage content={streamingContent} model={modelName} />}
+      {maxScroll > 0 && effectiveOffset > 0 && (
+        <Box justifyContent="center">
+          <Text color="gray" dimColor>
+            ↑ {effectiveOffset} more above (↑↓ to scroll, Esc to exit scroll)
+          </Text>
+        </Box>
+      )}
+      {visibleItems.map((msg) => renderMessage(msg))}
       {messages.length === 0 && !streaming && (
         <Box justifyContent="center" paddingTop={2}>
           <Text color="gray" dimColor>

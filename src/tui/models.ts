@@ -1,8 +1,6 @@
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { VERSION } from "../api/updater.js";
 
-const pkg = JSON.parse(readFileSync(join(import.meta.dirname, "../../package.json"), "utf-8"));
-export const VERSION: string = pkg.version;
+export { VERSION };
 
 export type ModelProvider = "opencode" | "kilo";
 
@@ -14,6 +12,7 @@ export interface FreeModel {
 }
 
 export const OPENCODE_MODELS: FreeModel[] = [
+  { id: "opencode/big-pickle-free", name: "Big Pickle", provider: "opencode", maxContext: 131072 },
   { id: "opencode/deepseek-v4-flash-free", name: "Deepseek V4 Flash", provider: "opencode", maxContext: 131072 },
   { id: "opencode/laguna-s-2.1-free", name: "Laguna S 2.1", provider: "opencode", maxContext: 131072 },
   { id: "opencode/ling-3.0-flash-free", name: "Ling 3.0 Flash", provider: "opencode", maxContext: 131072 },
