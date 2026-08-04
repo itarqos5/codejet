@@ -42,6 +42,9 @@ if (-not $PSScriptRoot) {
     Write-Host "$esc[36m============================================================$esc[0m"
     Write-Host ""
 
+    # Move to a valid directory so git doesn't fail on invalid CWD
+    Set-Location $env:USERPROFILE
+
     # --- Verify git is installed ---
     $hasGit = $false
     try { $null = Get-Command git -ErrorAction Stop; $hasGit = $true } catch { }
