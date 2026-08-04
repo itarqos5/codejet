@@ -1,6 +1,6 @@
 {
   "name": "codejet",
-  "version": "1.2.9",
+  "version": "1.2.10",
   "description": "Blazing-fast, terminal-native AI agent runner for zero-latency execution using OpenCode & Kilo Code models",
   "main": "dist/index.js",
   "type": "module",
