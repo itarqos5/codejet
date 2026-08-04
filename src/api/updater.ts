@@ -122,27 +122,52 @@ export async function checkForUpdate(): Promise<UpdateInfo | null> {
   };
 }
 
+export interface UpdateProgress {
+  task: string;
+  percent: number;
+}
+
+// Shell-aware exec that works on Windows (fixes ENOENT for npm/git)
+async function shellExec(
+  cmd: string,
+  args: string[],
+): Promise<{ stdout: string; stderr: string }> {
+  const isWindows = process.platform === "win32";
+  if (isWindows) {
+    // On Windows, run through cmd.exe to resolve PATH correctly
+    return execFileAsync("cmd.exe", ["/c", cmd, ...args], {
+      windowsHide: true,
+      timeout: 120000,
+    });
+  }
+  return execFileAsync(cmd, args, { timeout: 120000 });
+}
+
 export async function installUpdate(
-  onProgress?: (line: string) => void,
+  onProgress?: (progress: UpdateProgress) => void,
 ): Promise<boolean> {
   try {
-    onProgress?.("Fetching latest from origin...");
-    await execFileAsync("git", ["fetch", "origin", "main"]);
+    onProgress?.({ task: "Fetching latest from origin...", percent: 5 });
+    await shellExec("git", ["fetch", "origin", "main"]);
 
-    onProgress?.("Pulling updates...");
-    const { stdout } = await execFileAsync("git", ["pull", "origin", "main"]);
-    onProgress?.(stdout.trim());
+    onProgress?.({ task: "Pulling updates...", percent: 20 });
+    await shellExec("git", ["pull", "origin", "main"]);
 
-    onProgress?.("Installing dependencies...");
-    await execFileAsync("npm", ["install"]);
+    onProgress?.({ task: "Installing dependencies...", percent: 45 });
+    await shellExec("npm", ["install"]);
 
-    onProgress?.("Building...");
-    await execFileAsync("npm", ["run", "build"]);
+    onProgress?.({ task: "Building project...", percent: 75 });
+    await shellExec("npm", ["run", "build"]);
 
-    onProgress?.("Update complete!");
+    onProgress?.({ task: "Finalizing...", percent: 95 });
+    // Small delay for visual feedback
+    await new Promise((r) => setTimeout(r, 500));
+
+    onProgress?.({ task: "Update complete!", percent: 100 });
     return true;
   } catch (err) {
-    onProgress?.(`Error: ${err instanceof Error ? err.message : String(err)}`);
+    const message = err instanceof Error ? err.message : String(err);
+    onProgress?.({ task: `Error: ${message}`, percent: -1 });
     return false;
   }
 }
