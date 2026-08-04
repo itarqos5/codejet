@@ -2,11 +2,25 @@
 .SYNOPSIS
     CodeJet Production Installation Script
 .DESCRIPTION
-    Installs CodeJet CLI tool with OpenCode and Kilo Code integration
+    Installs CodeJet CLI tool with OpenCode and Kilo Code integration.
+    Must be run as Administrator.
 .NOTES
     Author: Itarqos
-    Version: 1.1.0
+    Version: 1.2.0
 #>
+
+# --- Elevation Check ---
+$currentPrincipal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
+if (-not $currentPrincipal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+    Write-Host "Requesting administrator privileges..." -ForegroundColor Yellow
+    $scriptPath = $MyInvocation.MyCommand.Path
+    if ($scriptPath) {
+        Start-Process powershell.exe -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$scriptPath`"" -Verb RunAs -Wait
+    } else {
+        Write-Host "[X] This script must be run as Administrator." -ForegroundColor Red
+    }
+    exit
+}
 
 $ErrorActionPreference = "Stop"
 
@@ -70,15 +84,17 @@ function Show-ProgressBar {
 function Prompt-YesNo {
     param([string]$Prompt, [bool]$Default = $true)
     $suffix = if ($Default) { " [Y/n] " } else { " [y/N] " }
-    while ($true) {
-        Write-Host ($AnsiCyan + $Prompt + $suffix + $AnsiReset) -NoNewline
+    Write-Host ($AnsiCyan + $Prompt + $suffix + $AnsiReset) -NoNewline
+    try {
         $key = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
         Write-Host ""
-        $char = $key.Character.ToLower()
-        if ($char -eq 'y') { return $true }
-        if ($char -eq 'n') { return $false }
-        if ($char -eq '' -and $Default) { return $true }
-        if ($char -eq '' -and -not $Default) { return $false }
+        $ch = $key.KeyChar
+        if ($ch -eq 'y' -or $ch -eq 'Y') { return $true }
+        if ($ch -eq 'n' -or $ch -eq 'N') { return $false }
+        return $Default
+    } catch {
+        Write-Host ""
+        return $Default
     }
 }
 
@@ -100,7 +116,6 @@ function Prompt-Menu {
                 40 { $selected = ($selected + 1) % $Options.Length } # Down
                 13 { break } # Enter
             }
-            # Clear previous lines
             for ($i = 0; $i -le $Options.Length; $i++) {
                 [Console]::SetCursorPosition(0, [Console]::CursorTop - 1)
                 Write-Host (" " * 80)
@@ -226,14 +241,16 @@ $codejetDir = "$env:USERPROFILE\.codejet"
 $keysPath = "$codejetDir\keys.json"
 
 $opencodeAuthPaths = @(
-    "$env:LOCALAPPDATA\opencode\auth.json",
     "$env:USERPROFILE\.local\share\opencode\auth.json",
+    "$env:LOCALAPPDATA\opencode\auth.json",
     "$env:HOME\.local\share\opencode\auth.json"
 )
 
 $kiloAuthPaths = @(
-    "$env:USERPROFILE\.config\kilo\auth.json",
-    "$env:HOME\.config\kilo\auth.json"
+    "$env:USERPROFILE\.local\share\kilo\auth.json",
+    "$env:HOME\.local\share\kilo\auth.json",
+    "$env:APPDATA\kilo\auth.json",
+    "$env:LOCALAPPDATA\kilo\auth.json"
 )
 
 $opencodeToken = $null
@@ -261,7 +278,7 @@ foreach ($path in $kiloAuthPaths) {
     }
 }
 
-# Try kilo auth status command
+# Try kilo auth status command as fallback
 if (-not $kiloToken -and $hasKilo) {
     try {
         $status = kilo auth status 2>$null
@@ -288,7 +305,6 @@ if ($needLogin) {
         if (-not $opencodeToken) {
             Write-Info "Opening OpenCode login..."
             opencode auth login
-            # Re-check after login
             foreach ($path in $opencodeAuthPaths) {
                 if (Test-Path $path) {
                     try {
@@ -303,7 +319,6 @@ if ($needLogin) {
         if (-not $kiloToken) {
             Write-Info "Opening Kilo Code login..."
             kilo auth login
-            # Re-check after login
             foreach ($path in $kiloAuthPaths) {
                 if (Test-Path $path) {
                     try {
