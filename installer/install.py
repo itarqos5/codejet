@@ -6,6 +6,8 @@ Compiles to EXE via: python -m PyInstaller installer/install.py --onefile --name
 import ctypes
 import json
 import os
+import re
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -26,7 +28,6 @@ try:
 except Exception:
     pass
 
-# Force UTF-8 output
 if sys.platform == "win32":
     os.system("")
 
@@ -94,12 +95,16 @@ def prompt_yn(msg: str, default: bool = True) -> bool:
         warn("Please enter Y (yes) or N (no).")
 
 
-def run(cmd: list[str], check: bool = False, capture: bool = True, **kwargs) -> subprocess.CompletedProcess:
+def run(cmd: list[str], check: bool = False, capture: bool = True,
+        shell: bool = False, cwd: str | None = None,
+        **kwargs) -> subprocess.CompletedProcess:
     return subprocess.run(
         cmd,
         capture_output=capture,
         text=True,
-        creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0,
+        shell=shell,
+        cwd=cwd,
+        creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" and not shell else 0,
         check=check,
         **kwargs,
     )
@@ -113,12 +118,8 @@ def is_admin() -> bool:
 
 
 def elevate_and_rerun() -> None:
-    """Re-launch this script as Administrator."""
-    script = sys.executable  # EXE path when compiled, python.exe when script
-    params = f'"{script}"'
-    ctypes.windll.shell32.ShellExecuteW(
-        None, "runas", script, None, None, 1
-    )
+    script = sys.executable
+    ctypes.windll.shell32.ShellExecuteW(None, "runas", script, None, None, 1)
     sys.exit(0)
 
 
@@ -143,18 +144,42 @@ def install_via_winget(package_id: str, name: str) -> bool:
 
 def refresh_path() -> None:
     machine = os.environ.get("PATH", "")
-    user_path = subprocess.run(
-        ["reg", "query", "HKCU\\Environment", "/v", "Path"],
-        capture_output=True, text=True
-    )
-    user_paths = ""
-    for line in user_path.stdout.splitlines():
-        if "Path" in line and "REG_" in line:
-            parts = line.split("    ", 3)
-            if len(parts) >= 4:
-                user_paths = parts[3].strip()
-                break
-    os.environ["PATH"] = user_paths + ";" + machine if user_paths else machine
+    try:
+        r = subprocess.run(
+            ["reg", "query", "HKCU\\Environment", "/v", "Path"],
+            capture_output=True, text=True
+        )
+        user_paths = ""
+        for line in r.stdout.splitlines():
+            if "Path" in line and "REG_" in line:
+                parts = line.split("    ", 3)
+                if len(parts) >= 4:
+                    user_paths = parts[3].strip()
+                    break
+        os.environ["PATH"] = user_paths + ";" + machine if user_paths else machine
+    except Exception:
+        pass
+
+
+def refresh_session_path() -> None:
+    """Read the persisted user PATH from registry and merge into current session."""
+    try:
+        r = subprocess.run(
+            ["reg", "query", "HKCU\\Environment", "/v", "Path"],
+            capture_output=True, text=True
+        )
+        user_paths = ""
+        for line in r.stdout.splitlines():
+            if "Path" in line and "REG_" in line:
+                parts = line.split("    ", 3)
+                if len(parts) >= 4:
+                    user_paths = parts[3].strip()
+                    break
+        if user_paths:
+            current = os.environ.get("PATH", "")
+            os.environ["PATH"] = user_paths + ";" + current
+    except Exception:
+        pass
 
 
 def get_provider_token(auth: dict, provider: str, keys: list[str]) -> str | None:
@@ -184,11 +209,9 @@ def find_tokens() -> tuple[str | None, str | None]:
     opencode_paths = [
         home / ".local" / "share" / "opencode" / "auth.json",
         Path(local_app) / "opencode" / "auth.json" if local_app else None,
-        home / ".local" / "share" / "opencode" / "auth.json",
     ]
 
     kilo_paths = [
-        home / ".local" / "share" / "kilo" / "auth.json",
         home / ".local" / "share" / "kilo" / "auth.json",
         Path(app_data) / "kilo" / "auth.json" if app_data else None,
         Path(local_app) / "kilo" / "auth.json" if local_app else None,
@@ -219,11 +242,9 @@ def find_tokens() -> tuple[str | None, str | None]:
             except Exception:
                 pass
 
-    # Fallback: kilo auth status
     if not kilo_token and check_command("kilo"):
         try:
             r = run(["kilo", "auth", "status"])
-            import re
             m = re.search(r'token["\s:]+([^\s",}]+)', r.stdout + r.stderr)
             if m:
                 kilo_token = m.group(1)
@@ -231,6 +252,38 @@ def find_tokens() -> tuple[str | None, str | None]:
             pass
 
     return opencode_token, kilo_token
+
+
+def save_keys(target_dir: Path, opencode_token: str | None, kilo_token: str | None) -> None:
+    keys_path = target_dir / "keys.json"
+    if opencode_token or kilo_token:
+        keys = {
+            "kilo_token": kilo_token or "",
+            "opencode_token": opencode_token or "",
+        }
+        keys_path.write_text(json.dumps(keys, indent=2), encoding="utf-8")
+        ok(f"Authentication tokens saved to {keys_path}")
+
+
+def get_local_head(target_dir: Path) -> str | None:
+    r = run(["git", "rev-parse", "HEAD"], cwd=str(target_dir))
+    if r.returncode == 0:
+        return r.stdout.strip()
+    return None
+
+
+def get_remote_head(repo_url: str) -> str | None:
+    r = run(["git", "ls-remote", repo_url, "refs/heads/main"])
+    if r.returncode == 0:
+        parts = r.stdout.strip().split()
+        if parts:
+            return parts[0]
+    return None
+
+
+def has_local_changes(target_dir: Path) -> bool:
+    r = run(["git", "status", "--porcelain"], cwd=str(target_dir))
+    return bool(r.stdout.strip())
 
 
 # ── Main ─────────────────────────────────────────────────────
@@ -243,8 +296,15 @@ def main() -> None:
 
     banner("CodeJet Installation")
 
+    repo_url = "https://github.com/itarqos5/codejet.git"
+    target_dir = Path.home() / ".codejet"
+    is_update = target_dir.exists() and (target_dir / ".git").exists()
+
+    if is_update:
+        banner("CodeJet Update")
+
     # ── Step 1: System Dependencies ──────────────────────────
-    step("1/5", "Checking system dependencies...")
+    step("1/7", "Checking system dependencies...")
 
     has_node = check_command("node")
     has_git = check_command("git")
@@ -286,7 +346,7 @@ def main() -> None:
         ok(f"Git found: {r.stdout.strip()}")
 
     # ── Step 2: CLI Tools ────────────────────────────────────
-    step("2/5", "Checking OpenCode and Kilo Code CLI...")
+    step("2/7", "Checking OpenCode and Kilo Code CLI...")
 
     has_opencode = check_command("opencode")
     has_kilo = check_command("kilo")
@@ -299,40 +359,34 @@ def main() -> None:
             missing.append("kilo")
         warn(f"Missing CLI tools: {', '.join(missing)}")
 
-        print(f"{CYAN}Install missing CLI tools globally via npm?{RESET}")
-        print(f"  {CYAN}>{RESET} Install OpenCode and Kilo Code")
-        print(f"  {CYAN} {RESET} Cancel Installation")
-        choice = prompt_yn("Proceed?", default=True)
+        if prompt_yn("Install missing CLI tools globally via npm?"):
+            step("2a", "Installing OpenCode and Kilo Code globally...")
+            shell = sys.platform == "win32"
+            progress("Installing opencode", 0)
+            run(["npm", "install", "-g", "opencode"], shell=shell)
+            progress("Installing opencode", 50)
+            run(["npm", "install", "-g", "@kilocode/cli"], shell=shell)
+            progress("Installing @kilocode/cli", 100)
 
-        if not choice:
-            info("Installation cancelled by user.")
-            input("Press Enter to exit...")
-            sys.exit(0)
+            has_opencode = check_command("opencode")
+            has_kilo = check_command("kilo")
 
-        step("2a", "Installing OpenCode and Kilo Code globally...")
-        progress("Installing opencode", 0)
-        run(["npm", "install", "-g", "opencode"])
-        progress("Installing opencode", 50)
-        run(["npm", "install", "-g", "@kilocode/cli"])
-        progress("Installing @kilocode/cli", 100)
-
-        has_opencode = check_command("opencode")
-        has_kilo = check_command("kilo")
-
-        if has_opencode:
-            ok("OpenCode installed")
+            if has_opencode:
+                ok("OpenCode installed")
+            else:
+                err("OpenCode installation failed")
+            if has_kilo:
+                ok("Kilo Code installed")
+            else:
+                err("Kilo Code installation failed")
         else:
-            err("OpenCode installation failed")
-        if has_kilo:
-            ok("Kilo Code installed")
-        else:
-            err("Kilo Code installation failed")
+            info("Skipping CLI tool installation.")
     else:
         ok("OpenCode CLI found")
         ok("Kilo Code CLI found")
 
     # ── Step 3: Auth Tokens ──────────────────────────────────
-    step("3/5", "Checking authentication tokens...")
+    step("3/7", "Checking authentication tokens...")
 
     opencode_token, kilo_token = find_tokens()
 
@@ -364,66 +418,109 @@ def main() -> None:
         ok("Kilo Code authentication token found")
 
     # ── Step 4: Repository Setup ─────────────────────────────
-    step("4/5", "Setting up CodeJet repository...")
+    step("4/7", "Setting up CodeJet repository...")
 
-    repo_url = "https://github.com/itarqos5/codejet.git"
-    target_dir = Path.home() / ".codejet"
+    if target_dir.exists() and (target_dir / ".git").exists():
+        local_head = get_local_head(target_dir)
+        remote_head = get_remote_head(repo_url)
+        local_dirty = has_local_changes(target_dir)
 
-    if target_dir.exists():
-        info("Removing existing directory...")
-        import shutil
-        shutil.rmtree(target_dir, ignore_errors=True)
-
-    info("Cloning repository...")
-    progress("Cloning", 0)
-    r = run(["git", "clone", repo_url, str(target_dir)])
-    progress("Cloning", 100)
-
-    if r.returncode != 0:
-        err(f"Git clone failed: {r.stderr.strip()}")
-        input("Press Enter to exit...")
-        sys.exit(1)
+        if local_head and remote_head and local_head == remote_head and not local_dirty:
+            info("Repository is up to date")
+        else:
+            if local_dirty:
+                warn("Local changes detected, stashing...")
+                run(["git", "stash"], cwd=str(target_dir))
+            info("Pulling latest changes...")
+            progress("Pulling", 0)
+            r = run(["git", "pull", "origin", "main"], cwd=str(target_dir))
+            progress("Pulling", 100)
+            if r.returncode != 0:
+                err(f"Git pull failed: {r.stderr.strip()}")
+                info("Re-cloning repository...")
+                shutil.rmtree(target_dir, ignore_errors=True)
+                progress("Cloning", 0)
+                run(["git", "clone", repo_url, str(target_dir)])
+                progress("Cloning", 100)
+    else:
+        if target_dir.exists():
+            shutil.rmtree(target_dir, ignore_errors=True)
+        info("Cloning repository...")
+        progress("Cloning", 0)
+        r = run(["git", "clone", repo_url, str(target_dir)])
+        progress("Cloning", 100)
+        if r.returncode != 0:
+            err(f"Git clone failed: {r.stderr.strip()}")
+            input("Press Enter to exit...")
+            sys.exit(1)
 
     info("Installing npm dependencies...")
     progress("npm install", 0)
-    run(["npm", "install"], cwd=str(target_dir))
+    shell = sys.platform == "win32"
+    run(["npm", "install"], cwd=str(target_dir), shell=shell)
     progress("npm install", 100)
     ok("Dependencies installed")
 
-    # Add to PATH
-    current_path = subprocess.run(
-        ["reg", "query", "HKCU\\Environment", "/v", "Path"],
-        capture_output=True, text=True
-    ).stdout
-    target_str = str(target_dir)
-    if target_str.lower() not in current_path.lower():
-        info("Adding CodeJet to user PATH...")
-        subprocess.run(
-            ["reg", "add", "HKCU\\Environment", "/v", "Path", "/t", "REG_EXPAND_SZ",
-             "/d", f"{current_path.strip()};{target_str}", "/f"],
-            capture_output=True
-        )
-        os.environ["PATH"] = os.environ.get("PATH", "") + ";" + target_str
-        ok("Added to PATH (restart terminal to take effect)")
+    # ── Step 5: API Keys ─────────────────────────────────────
+    step("5/7", "Saving authentication tokens...")
+    save_keys(target_dir, opencode_token, kilo_token)
+
+    # ── Step 6: Build Binary ─────────────────────────────────
+    step("6/7", "Building codejet binary...")
+
+    info("Installing codejet globally...")
+    progress("npm install -g", 0)
+    r = run(["npm", "install", "-g", "."], cwd=str(target_dir), shell=shell)
+    progress("npm install -g", 100)
+
+    if r.returncode == 0:
+        ok("codejet binary installed globally")
     else:
-        ok("Already in PATH")
+        err("Failed to install codejet binary")
+        info("Adding to PATH as fallback...")
+        current_path = subprocess.run(
+            ["reg", "query", "HKCU\\Environment", "/v", "Path"],
+            capture_output=True, text=True
+        ).stdout
+        target_str = str(target_dir)
+        if target_str.lower() not in current_path.lower():
+            subprocess.run(
+                ["reg", "add", "HKCU\\Environment", "/v", "Path", "/t", "REG_EXPAND_SZ",
+                 "/d", f"{current_path.strip()};{target_str}", "/f"],
+                capture_output=True
+            )
+            ok("Added to PATH")
 
-    # ── Save tokens ──────────────────────────────────────────
-    keys_path = target_dir / "keys.json"
-    if opencode_token or kilo_token:
-        keys = {
-            "kilo_token": kilo_token or "",
-            "opencode_token": opencode_token or "",
-        }
-        keys_path.write_text(json.dumps(keys, indent=2), encoding="utf-8")
-        ok(f"Authentication tokens saved to {keys_path}")
+    # ── Step 7: Refresh Environment ──────────────────────────
+    step("7/7", "Refreshing environment...")
 
-    # ── Step 5: Completion ───────────────────────────────────
-    step("5/5", "Installation complete!")
+    refresh_session_path()
+
+    npm_global = subprocess.run(
+        ["npm", "root", "-g"], capture_output=True, text=True, shell=shell
+    ).stdout.strip()
+    if npm_global and npm_global not in os.environ.get("PATH", ""):
+        npm_bin = os.path.join(npm_global, ".bin")
+        if os.path.isdir(npm_bin):
+            os.environ["PATH"] = npm_bin + ";" + os.environ.get("PATH", "")
+
+    has_codejet = check_command("codejet")
+    if has_codejet:
+        ok("codejet is available in this session")
+    else:
+        warn("codejet may require a terminal restart to be available")
+
+    # ── Done ─────────────────────────────────────────────────
+    if is_update:
+        step("DONE", "Update complete!")
+    else:
+        step("DONE", "Installation complete!")
+
     print()
     banner("CodeJet installed successfully!")
     print(f"{GREEN}  Run 'codejet' to use the CLI tool!{RESET}")
-    print(f"{DIM}  Note: Restart your terminal for PATH changes to take effect.{RESET}")
+    if not has_codejet:
+        print(f"{DIM}  Note: Restart your terminal for PATH changes to take effect.{RESET}")
     print()
     input("Press Enter to exit...")
 
