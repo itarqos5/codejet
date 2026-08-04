@@ -80,6 +80,7 @@ export async function startServer(): Promise<boolean> {
       stdio: ["ignore", "pipe", "pipe"],
       detached: false,
       windowsHide: true,
+      shell: process.platform === "win32",
     });
 
     let stderrOutput = "";

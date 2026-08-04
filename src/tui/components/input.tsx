@@ -8,11 +8,13 @@ export function InputBox({
   modelName,
   onSubmit,
   disabled,
+  messageCount,
 }: {
   mode: AppMode;
   modelName: string;
   onSubmit: (value: string) => void;
   disabled: boolean;
+  messageCount: number;
 }) {
   const borderColor = mode === "build" ? "blue" : "yellow";
 
@@ -31,6 +33,7 @@ export function InputBox({
           ▸
         </Text>
         <TextInput
+          key={messageCount}
           onSubmit={(value) => {
             if (value.trim() && !disabled) {
               onSubmit(value.trim());

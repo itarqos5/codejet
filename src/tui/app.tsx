@@ -193,6 +193,7 @@ export default function App() {
                 modelName={currentModel?.name ?? state.modelId}
                 onSubmit={handleSendMessage}
                 disabled={state.streaming || !!state.pendingQuestion}
+                messageCount={state.messages.length}
               />
             </Box>
 
