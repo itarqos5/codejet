@@ -39,36 +39,33 @@ function isNewer(latest: string, current: string): boolean {
 
 export async function checkForUpdate(): Promise<UpdateInfo | null> {
   try {
-    const res = await fetch(`https://api.github.com/repos/${REPO}/releases/latest`, {
-      headers: { Accept: "application/vnd.github.v3+json" },
-      signal: AbortSignal.timeout(8000),
-    });
+    const res = await fetch(
+      `https://raw.githubusercontent.com/${REPO}/main/package.json`,
+      { signal: AbortSignal.timeout(8000) },
+    );
 
     if (!res.ok) {
-      console.error(`[updater] GitHub API returned ${res.status}`);
+      console.error(`[updater] GitHub raw returned ${res.status}`);
       return null;
     }
 
-    const release = (await res.json()) as {
-      tag_name: string;
-      html_url: string;
-    };
+    const pkg = (await res.json()) as { version?: string };
+    const remote = pkg?.version;
 
-    if (!release?.tag_name) {
-      console.error("[updater] No tag_name in release");
+    if (!remote) {
+      console.error("[updater] No version in remote package.json");
       return null;
     }
 
-    const tag = release.tag_name.replace(/^v/, "");
-    if (!isNewer(tag, VERSION)) {
-      console.error(`[updater] Current v${VERSION} is up to date or newer than v${tag}`);
+    if (!isNewer(remote, VERSION)) {
+      console.log(`[updater] v${VERSION} is up to date (remote: v${remote})`);
       return null;
     }
 
     return {
-      version: tag,
-      tag: release.tag_name,
-      url: release.html_url,
+      version: remote,
+      tag: `v${remote}`,
+      url: `https://github.com/${REPO}/releases/tag/v${remote}`,
     };
   } catch (err) {
     console.error("[updater] Check failed:", err);
