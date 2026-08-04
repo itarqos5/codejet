@@ -86,7 +86,7 @@ export function appReducer(state: AppState, action: AppAction): AppState {
 export const INITIAL_STATE: AppState = {
   messages: [],
   mode: "build",
-  modelId: "qwen/qwen3-235b-a22b",
+  modelId: "openai/codex-mini",
   streaming: false,
   streamingContent: "",
   todos: [],

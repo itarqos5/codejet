@@ -1,6 +1,7 @@
 import React, { useMemo } from "react";
 import { Box, Text } from "ink";
 import figlet from "figlet";
+import { VERSION } from "../models.js";
 
 export function Header({ model, mode }: { model: string; mode: string }) {
   const columns = process.stdout.columns ?? 80;
@@ -23,8 +24,8 @@ export function Header({ model, mode }: { model: string; mode: string }) {
         </Text>
       ))}
       <Box marginTop={0} gap={1} justifyContent="center">
-        <Text color="gray" dimColor>
-          v1.0.0
+        <Text color="white" dimColor>
+          v{VERSION}
         </Text>
         <Text color="gray">│</Text>
         <Text color="yellow" bold>
