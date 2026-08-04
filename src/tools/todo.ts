@@ -11,7 +11,7 @@ export interface Todo {
   created: number;
 }
 
-async function loadTodos(): Promise<Todo[]> {
+export async function loadTodos(): Promise<Todo[]> {
   try {
     const raw = await readFile(TODO_PATH, "utf-8");
     return JSON.parse(raw) as Todo[];

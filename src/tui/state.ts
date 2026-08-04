@@ -1,0 +1,100 @@
+import type { Todo } from "../tools/todo.js";
+
+export type AppMode = "build" | "plan";
+
+export interface ChatMessage {
+  id: string;
+  role: "user" | "assistant" | "system" | "tool-call" | "tool-result" | "file-change";
+  content: string;
+  timestamp: number;
+  modelName?: string;
+  filePath?: string;
+  fileAction?: "created" | "modified" | "deleted";
+}
+
+export interface PendingQuestion {
+  id: string;
+  question: string;
+  options?: string[];
+  resolve: (answer: string) => void;
+}
+
+export interface AppState {
+  messages: ChatMessage[];
+  mode: AppMode;
+  modelId: string;
+  streaming: boolean;
+  streamingContent: string;
+  todos: Todo[];
+  pendingQuestion: PendingQuestion | null;
+  showModal: boolean;
+  modalIndex: number;
+  inputFocused: boolean;
+  contextTokensUsed: number;
+  contextTokensMax: number;
+  error: string | null;
+}
+
+export type AppAction =
+  | { type: "ADD_MESSAGE"; message: ChatMessage }
+  | { type: "SET_MODE"; mode: AppMode }
+  | { type: "SET_MODEL"; modelId: string }
+  | { type: "SET_STREAMING"; streaming: boolean }
+  | { type: "SET_STREAMING_CONTENT"; content: string }
+  | { type: "SET_TODOS"; todos: Todo[] }
+  | { type: "SET_PENDING_QUESTION"; question: PendingQuestion | null }
+  | { type: "TOGGLE_MODAL" }
+  | { type: "SET_MODAL_INDEX"; index: number }
+  | { type: "SET_INPUT_FOCUSED"; focused: boolean }
+  | { type: "SET_CONTEXT_TOKENS"; used: number; max: number }
+  | { type: "SET_ERROR"; error: string | null }
+  | { type: "CLEAR_MESSAGES" };
+
+export function appReducer(state: AppState, action: AppAction): AppState {
+  switch (action.type) {
+    case "ADD_MESSAGE":
+      return { ...state, messages: [...state.messages, action.message] };
+    case "SET_MODE":
+      return { ...state, mode: action.mode };
+    case "SET_MODEL":
+      return { ...state, modelId: action.modelId };
+    case "SET_STREAMING":
+      return { ...state, streaming: action.streaming };
+    case "SET_STREAMING_CONTENT":
+      return { ...state, streamingContent: action.content };
+    case "SET_TODOS":
+      return { ...state, todos: action.todos };
+    case "SET_PENDING_QUESTION":
+      return { ...state, pendingQuestion: action.question };
+    case "TOGGLE_MODAL":
+      return { ...state, showModal: !state.showModal, modalIndex: 0 };
+    case "SET_MODAL_INDEX":
+      return { ...state, modalIndex: action.index };
+    case "SET_INPUT_FOCUSED":
+      return { ...state, inputFocused: action.focused };
+    case "SET_CONTEXT_TOKENS":
+      return { ...state, contextTokensUsed: action.used, contextTokensMax: action.max };
+    case "SET_ERROR":
+      return { ...state, error: action.error };
+    case "CLEAR_MESSAGES":
+      return { ...state, messages: [], streamingContent: "", contextTokensUsed: 0 };
+    default:
+      return state;
+  }
+}
+
+export const INITIAL_STATE: AppState = {
+  messages: [],
+  mode: "build",
+  modelId: "qwen/qwen3-235b-a22b",
+  streaming: false,
+  streamingContent: "",
+  todos: [],
+  pendingQuestion: null,
+  showModal: false,
+  modalIndex: 0,
+  inputFocused: true,
+  contextTokensUsed: 0,
+  contextTokensMax: 131072,
+  error: null,
+};
