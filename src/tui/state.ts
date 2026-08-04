@@ -49,6 +49,7 @@ export interface AppState {
   opencodeReady: boolean;
   streaming: boolean;
   streamingContent: string;
+  cancelPending: boolean;
   todos: Todo[];
   pendingQuestion: PendingQuestion | null;
   pendingPlan: PendingPlan | null;
@@ -72,6 +73,7 @@ export type AppAction =
   | { type: "SET_OPENCODE_READY"; ready: boolean }
   | { type: "SET_STREAMING"; streaming: boolean }
   | { type: "SET_STREAMING_CONTENT"; content: string }
+  | { type: "SET_CANCEL_PENDING"; pending: boolean }
   | { type: "SET_TODOS"; todos: Todo[] }
   | { type: "SET_PENDING_QUESTION"; question: PendingQuestion | null }
   | { type: "SET_PENDING_PLAN"; plan: PendingPlan | null }
@@ -97,9 +99,11 @@ export function appReducer(state: AppState, action: AppAction): AppState {
     case "SET_OPENCODE_READY":
       return { ...state, opencodeReady: action.ready };
     case "SET_STREAMING":
-      return { ...state, streaming: action.streaming };
+      return { ...state, streaming: action.streaming, cancelPending: false };
     case "SET_STREAMING_CONTENT":
       return { ...state, streamingContent: action.content };
+    case "SET_CANCEL_PENDING":
+      return { ...state, cancelPending: action.pending };
     case "SET_TODOS":
       return { ...state, todos: action.todos };
     case "SET_PENDING_QUESTION":
@@ -150,6 +154,7 @@ export const INITIAL_STATE: AppState = {
   opencodeReady: false,
   streaming: false,
   streamingContent: "",
+  cancelPending: false,
   todos: [],
   pendingQuestion: null,
   pendingPlan: null,

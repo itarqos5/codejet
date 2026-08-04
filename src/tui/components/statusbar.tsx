@@ -3,17 +3,16 @@ import { Box, Text } from "ink";
 import { formatContextUsage } from "../models.js";
 import type { AppMode } from "../state.js";
 
-function AnimatedDot({ active }: { active: boolean }) {
-  const [show, setShow] = useState(true);
-  
+function StreamingDot() {
+  const [frame, setFrame] = useState(0);
+
   useEffect(() => {
-    if (!active) return;
-    const interval = setInterval(() => setShow((s) => !s), 300);
+    const interval = setInterval(() => setFrame((f) => (f + 1) % 4), 250);
     return () => clearInterval(interval);
-  }, [active]);
-  
-  if (!active) return <Text color="green">●</Text>;
-  return <Text color={show ? "green" : "green" as any} dimColor>○</Text>;
+  }, []);
+
+  const dots = ".".repeat(frame + 1);
+  return <Text color="yellow" bold>Processing{dots.padEnd(4)}</Text>;
 }
 
 export function StatusBar({
@@ -22,6 +21,7 @@ export function StatusBar({
   contextUsed,
   contextMax,
   streaming,
+  cancelPending,
   todoCount,
 }: {
   mode: AppMode;
@@ -29,6 +29,7 @@ export function StatusBar({
   contextUsed: number;
   contextMax: number;
   streaming: boolean;
+  cancelPending: boolean;
   todoCount: number;
 }) {
   const contextStr = formatContextUsage(contextUsed, contextMax);
@@ -43,24 +44,25 @@ export function StatusBar({
   const barColor = contextPercent > 80 ? "red" : contextPercent > 60 ? "yellow" : "cyan";
 
   return (
-    <Box justifyContent="space-between" paddingX={1} borderStyle="bold" borderColor="#333333">
+    <Box justifyContent="space-between" paddingX={1}>
       {/* Left side - Mode and status */}
       <Box gap={2} alignItems="center">
         {/* Mode indicator */}
-        <Box gap={0}>
-          <Text color={modeColor} bold>┌</Text>
-          <Text color={modeColor} bold>{modeLabel}</Text>
-          <Text color={modeColor} bold>┐</Text>
-        </Box>
-        
+        <Text color={modeColor} bold>[{modeLabel}]</Text>
+
         <Text color="gray">│</Text>
-        
-        {/* Streaming indicator */}
+
+        {/* Streaming indicator with ESC hint */}
         <Box gap={1} alignItems="center">
           {streaming ? (
             <>
-              <AnimatedDot active={true} />
-              <Text color="yellow" bold>Processing</Text>
+              <StreamingDot />
+              <Text color="gray">│</Text>
+              {cancelPending ? (
+                <Text color="red" bold>Press ESC again to confirm cancel</Text>
+              ) : (
+                <Text color="gray" dimColor>Press ESC to cancel</Text>
+              )}
             </>
           ) : (
             <>
@@ -69,31 +71,23 @@ export function StatusBar({
             </>
           )}
         </Box>
-        
+
         {/* Todo count */}
         {todoCount > 0 && (
           <>
             <Text color="gray">│</Text>
-            <Box gap={1}>
-              <Text color="magenta">☑</Text>
-              <Text color="magenta" bold>{todoCount}</Text>
-            </Box>
+            <Text color="magenta" bold>☑ {todoCount}</Text>
           </>
         )}
       </Box>
-      
+
       {/* Right side - Context and help */}
       <Box gap={2} alignItems="center">
-        {/* Context usage with visual bar */}
         <Box gap={1} alignItems="center">
-          <Text color="gray">Context:</Text>
           <Text color={barColor}>{contextBar}</Text>
           <Text color="white">{contextStr}</Text>
         </Box>
-        
         <Text color="gray">│</Text>
-        
-        {/* Help hint */}
         <Text color="gray" dimColor>Ctrl+P</Text>
       </Box>
     </Box>

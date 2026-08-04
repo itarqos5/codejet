@@ -55,7 +55,8 @@ export default function App() {
   // Ensure minimum terminal size
   const rows = Math.max(20, process.stdout.rows ?? 24);
   const cols = Math.max(80, process.stdout.columns ?? 80);
-  const chatHeight = Math.max(4, rows - 10); // Account for header, input, status bar
+  // Header = 2 lines, StatusBar = 1 line, InputBox = ~5 lines, padding = 2
+  const chatHeight = Math.max(4, rows - 12);
 
   // Startup: OpenCode server + Kilo ping + update check
   useEffect(() => {
@@ -271,6 +272,7 @@ export default function App() {
             contextUsed={state.contextTokensUsed}
             contextMax={state.contextTokensMax}
             streaming={state.streaming}
+            cancelPending={state.cancelPending}
             todoCount={state.todos.length}
           />
 

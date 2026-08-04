@@ -37,7 +37,8 @@ export function useKeyboard({
     if (key.ctrl && input === "c") {
       logSessionErrors(sessionErrors.current);
       import("../../api/opencode-server.js").then((mod) => mod.stopServer()).catch(() => {});
-      process.stdout.write("\x1B[2J\x1B[0f");
+      process.stdout.write("\x1B[0m"); // Reset colors
+      process.stdout.write("\x1B[2J\x1B[0f"); // Clear
       exit();
       return;
     }
@@ -126,18 +127,34 @@ export function useKeyboard({
       return;
     }
 
-    // Escape - close modals or abort streaming
+    // Escape - close modals or abort streaming (two-step cancel)
     if (key.escape) {
       if (modalMode !== "none") {
         setModalMode("none");
         return;
       }
       if (state.streaming) {
-        abortStream();
-        dispatch({ type: "SET_STREAMING_CONTENT", content: "" });
+        if (state.cancelPending) {
+          // Second ESC - actually cancel
+          abortStream();
+          dispatch({ type: "SET_STREAMING_CONTENT", content: "" });
+          dispatch({ type: "SET_CANCEL_PENDING", pending: false });
+        } else {
+          // First ESC - show confirmation
+          dispatch({ type: "SET_CANCEL_PENDING", pending: true });
+          // Auto-reset after 3 seconds
+          setTimeout(() => {
+            dispatch({ type: "SET_CANCEL_PENDING", pending: false });
+          }, 3000);
+        }
         return;
       }
       return;
+    }
+
+    // Any other key while cancel pending resets it
+    if (state.cancelPending && state.streaming) {
+      dispatch({ type: "SET_CANCEL_PENDING", pending: false });
     }
 
     // Tab - toggle mode
