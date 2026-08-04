@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React from "react";
 import { Box, Text } from "ink";
 import { TextInput } from "@inkjs/ui";
 import type { AppMode } from "../state.js";
@@ -6,15 +6,13 @@ import type { AppMode } from "../state.js";
 export function InputBox({
   mode,
   onSubmit,
-  onFocus,
   disabled,
 }: {
   mode: AppMode;
   onSubmit: (value: string) => void;
-  onFocus: () => void;
   disabled: boolean;
 }) {
-  const borderColor = mode === "build" ? "blue" : "orange";
+  const borderColor = mode === "build" ? "blue" : "yellow";
 
   return (
     <Box

@@ -1,5 +1,5 @@
 import React, { useReducer, useCallback, useEffect, useState } from "react";
-import { Box, Text, useInput, useApp, useStdin } from "ink";
+import { Box, Text, useInput, useApp } from "ink";
 import { Header } from "./components/header.js";
 import { ChatArea } from "./components/chat.js";
 import { InputBox } from "./components/input.js";
@@ -19,7 +19,6 @@ function genId(): string {
 export default function App() {
   const [state, dispatch] = useReducer(appReducer, INITIAL_STATE);
   const { exit } = useApp();
-  const { isRawModeSupported, setRawMode } = useStdin();
   const [modalMode, setModalMode] = useState<"none" | "command" | "model">("none");
   const [modalIndex, setModalIndex] = useState(0);
   const [fileNotifications, setFileNotifications] = useState<
@@ -107,13 +106,11 @@ export default function App() {
           setModalIndex(0);
           break;
         case "compact":
-          // TODO: implement compaction
           break;
         case "clear":
           dispatch({ type: "CLEAR_MESSAGES" });
           break;
         case "todos":
-          // TODO: show todos
           break;
       }
     },
@@ -135,7 +132,6 @@ export default function App() {
       try {
         const keys = loadKeys();
 
-        // Try Kilo Code first
         if (keys.kilo_token) {
           const { chatCompletionsStream } = await import("../api/kilocode.js");
           const stream = await chatCompletionsStream({
@@ -198,7 +194,6 @@ export default function App() {
               fullContent += delta.content;
               dispatch({ type: "SET_STREAMING_CONTENT", content: fullContent });
             }
-            // Handle tool calls
             if (delta?.tool_calls) {
               for (const tc of delta.tool_calls) {
                 if (tc.function?.name === "ask") {
@@ -241,7 +236,6 @@ export default function App() {
             };
             dispatch({ type: "ADD_MESSAGE", message: assistantMsg });
 
-            // Estimate context usage
             const estimatedTokens = state.contextTokensUsed + fullContent.length / 4 + content.length / 4;
             dispatch({
               type: "SET_CONTEXT_TOKENS",
@@ -249,14 +243,11 @@ export default function App() {
               max: currentModel?.maxContext ?? 131072,
             });
           }
-        }
-        // Fallback to OpenCode
-        else {
-          const opencode = await import("../api/opencode.js");
+        } else {
           const assistantMsg: ChatMessage = {
             id: genId(),
             role: "assistant",
-            content: "[OpenCode integration - connect to your OpenCode server to use this model]",
+            content: "[No API key found. Set your Kilo token in ~/.codejet/keys.json]",
             timestamp: Date.now(),
             modelName: currentModel?.name,
           };
@@ -279,7 +270,6 @@ export default function App() {
     [state.modelId, state.messages, state.contextTokensUsed, currentModel],
   );
 
-  // Clear old file notifications
   useEffect(() => {
     if (fileNotifications.length > 0) {
       const timer = setTimeout(() => {
@@ -289,18 +279,24 @@ export default function App() {
     }
   }, [fileNotifications.length]);
 
+  const rows = process.stdout.rows ?? 24;
+  const chatHeight = Math.max(4, rows - 8);
+
   return (
-    <Box flexDirection="column" height="100%">
+    <Box flexDirection="column" width="100%" height="100%">
+      {/* Header - ASCII art + model + mode badge */}
       <Header model={currentModel?.name ?? state.modelId} mode={state.mode} />
 
-      <Box flexDirection="row" flexGrow={1} overflow="hidden">
+      {/* Main content area */}
+      <Box flexDirection="row" flexGrow={1} height={chatHeight}>
+        {/* Chat column */}
         <Box flexDirection="column" flexGrow={1} overflow="hidden">
           <ChatArea
             messages={state.messages}
             streaming={state.streaming}
             streamingContent={state.streamingContent}
             modelName={currentModel?.name ?? "assistant"}
-            maxHeight={20}
+            maxHeight={chatHeight - 2}
           />
 
           {fileNotifications.map((n, i) => (
@@ -328,11 +324,11 @@ export default function App() {
           <InputBox
             mode={state.mode}
             onSubmit={handleSendMessage}
-            onFocus={() => dispatch({ type: "SET_INPUT_FOCUSED", focused: true })}
             disabled={state.streaming || !!state.pendingQuestion}
           />
         </Box>
 
+        {/* Todo sidebar */}
         {state.todos.length > 0 && (
           <Box paddingLeft={1}>
             <TodoPanel todos={state.todos} />
@@ -340,6 +336,7 @@ export default function App() {
         )}
       </Box>
 
+      {/* Status bar */}
       <StatusBar
         mode={state.mode}
         modelId={state.modelId}
@@ -349,27 +346,32 @@ export default function App() {
         todoCount={state.todos.length}
       />
 
-      <CommandModal
-        visible={modalMode === "command"}
-        selectedIndex={modalIndex}
-        onSelect={handleCommandAction}
-        onClose={() => setModalMode("none")}
-      />
+      {/* Overlay modals - render on top */}
+      {modalMode === "command" && (
+        <CommandModal
+          visible={true}
+          selectedIndex={modalIndex}
+          onSelect={handleCommandAction}
+          onClose={() => setModalMode("none")}
+        />
+      )}
 
-      <ModelSelector
-        visible={modalMode === "model"}
-        models={FREE_MODELS.map((m) => ({ id: m.id, name: m.name, provider: m.provider }))}
-        selectedIndex={modalIndex}
-        onSelect={(modelId) => {
-          dispatch({ type: "SET_MODEL", modelId });
-          const model = getModelById(modelId);
-          if (model) {
-            dispatch({ type: "SET_CONTEXT_TOKENS", used: 0, max: model.maxContext });
-          }
-          setModalMode("none");
-        }}
-        onClose={() => setModalMode("none")}
-      />
+      {modalMode === "model" && (
+        <ModelSelector
+          visible={true}
+          models={FREE_MODELS.map((m) => ({ id: m.id, name: m.name, provider: m.provider }))}
+          selectedIndex={modalIndex}
+          onSelect={(modelId) => {
+            dispatch({ type: "SET_MODEL", modelId });
+            const model = getModelById(modelId);
+            if (model) {
+              dispatch({ type: "SET_CONTEXT_TOKENS", used: 0, max: model.maxContext });
+            }
+            setModalMode("none");
+          }}
+          onClose={() => setModalMode("none")}
+        />
+      )}
     </Box>
   );
 }

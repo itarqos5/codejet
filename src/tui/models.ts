@@ -7,21 +7,12 @@ export interface FreeModel {
 
 export const FREE_MODELS: FreeModel[] = [
   // Kilo Code free models
-  { id: "qwen/qwen3-235b-a22b", name: "Qwen3 235B", provider: "kilo", maxContext: 131072 },
-  { id: "qwen/qwen3-coder", name: "Qwen3 Coder", provider: "kilo", maxContext: 131072 },
-  { id: "google/gemma-3-27b-it", name: "Gemma 3 27B", provider: "kilo", maxContext: 131072 },
-  { id: "microsoft/phi-4-reasoning-plus", name: "Phi-4 Reasoning+", provider: "kilo", maxContext: 131072 },
-  { id: "deepseek/deepseek-r1", name: "DeepSeek R1", provider: "kilo", maxContext: 131072 },
-  { id: "deepseek/deepseek-v3-0324", name: "DeepSeek V3", provider: "kilo", maxContext: 131072 },
-  { id: "meta-llama/llama-4-maverick", name: "Llama 4 Maverick", provider: "kilo", maxContext: 131072 },
-  { id: "nvidia/llama-3.1-nemotron-70b-instruct", name: "Nemotron 70B", provider: "kilo", maxContext: 131072 },
-  // OpenCode models (local server)
-  { id: "anthropic/claude-sonnet-4", name: "Claude Sonnet 4", provider: "opencode", maxContext: 200000 },
-  { id: "anthropic/claude-3.5-haiku", name: "Claude 3.5 Haiku", provider: "opencode", maxContext: 200000 },
-  { id: "openai/gpt-4o", name: "GPT-4o", provider: "opencode", maxContext: 128000 },
-  { id: "openai/gpt-4o-mini", name: "GPT-4o Mini", provider: "opencode", maxContext: 128000 },
-  { id: "google/gemini-2.5-pro", name: "Gemini 2.5 Pro", provider: "opencode", maxContext: 1048576 },
-  { id: "google/gemini-2.5-flash", name: "Gemini 2.5 Flash", provider: "opencode", maxContext: 1048576 },
+  { id: "nvidia/nemotron-3-super-120b-a12b", name: "Nemotron 3 Super", provider: "kilo", maxContext: 131072 },
+  { id: "nvidia/nemotron-3-ultra-120b-a12b", name: "Nemotron 3 Ultra", provider: "kilo", maxContext: 131072 },
+  // OpenCode free models
+  { id: "deepseek/deepseek-v4-flash-free", name: "Deepseek V4 Flash Free", provider: "opencode", maxContext: 131072 },
+  { id: "moonshotai/mimo-v2.5-free", name: "MiMo V2.5 Free", provider: "opencode", maxContext: 131072 },
+  { id: "openai/codex-mini", name: "Big Pickle", provider: "opencode", maxContext: 131072 },
 ];
 
 export function getModelById(id: string): FreeModel | undefined {

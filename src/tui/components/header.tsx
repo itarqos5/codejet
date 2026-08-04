@@ -1,24 +1,28 @@
-import React from "react";
+import React, { useMemo } from "react";
 import { Box, Text } from "ink";
-
-const ASCII_ART = [
-  "  ██████╗ ██████╗ ████████╗██╗███████╗███████╗",
-  " ██╔════╝██╔═══██╗╚══██╔══╝██║██╔════╝██╔════╝",
-  " ██║     ██║   ██║   ██║   ██║█████╗  ███████╗",
-  " ██║     ██║   ██║   ██║   ██║██╔══╝  ╚════██║",
-  " ╚██████╗╚██████╔╝   ██║   ██║███████╗███████║",
-  "  ╚═════╝ ╚═════╝    ╚═╝   ╚═╝╚══════╝╚══════╝",
-];
+import figlet from "figlet";
 
 export function Header({ model, mode }: { model: string; mode: string }) {
+  const columns = process.stdout.columns ?? 80;
+
+  const asciiArt = useMemo(() => {
+    const font = columns >= 60 ? "ANSI Shadow" : "Small";
+    const raw = figlet.textSync("CODEJET", { font, horizontalLayout: "fitted" });
+    const lines = raw.split("\n");
+    while (lines.length > 0 && lines[lines.length - 1].trim() === "") lines.pop();
+    return lines;
+  }, [columns]);
+
+  const modeColor = mode === "build" ? "blue" : "yellow";
+
   return (
-    <Box flexDirection="column" alignItems="center" paddingTop={1}>
-      {ASCII_ART.map((line, i) => (
+    <Box flexDirection="column" alignItems="center" paddingTop={0}>
+      {asciiArt.map((line, i) => (
         <Text key={i} color="cyan" bold>
           {line}
         </Text>
       ))}
-      <Box marginTop={1} gap={2}>
+      <Box marginTop={0} gap={1} justifyContent="center">
         <Text color="gray" dimColor>
           v1.0.0
         </Text>
@@ -27,11 +31,7 @@ export function Header({ model, mode }: { model: string; mode: string }) {
           {model}
         </Text>
         <Text color="gray">│</Text>
-        <Text
-          color={mode === "build" ? "blue" : "orange"}
-          bold
-          inverse
-        >
+        <Text color={modeColor} bold inverse>
           {" "}
           {mode.toUpperCase()}{" "}
         </Text>

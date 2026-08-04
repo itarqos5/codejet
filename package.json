@@ -47,7 +47,9 @@
   },
   "dependencies": {
     "@inkjs/ui": "^2.0.0",
+    "@types/figlet": "^1.7.0",
     "@types/react": "^19.2.18",
+    "figlet": "^1.11.4",
     "ink": "^6.8.0",
     "react": "^19.2.8"
   }
