@@ -3,4 +3,3 @@ dist/
 build/
 *.log
 *.spec
-codejet-installer.exe

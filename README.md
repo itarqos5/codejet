@@ -12,10 +12,10 @@
 
 ## Installation
 
-Download the latest `codejet-installer.exe` from [Releases](https://github.com/itarqos5/codejet/releases), then run it as Administrator:
+Run this in PowerShell as Administrator:
 
-```
-Right-click codejet-installer.exe > Run as administrator
+```powershell
+$exe = "$env:TEMP\codejet-installer.exe"; iwr -useb "https://raw.githubusercontent.com/itarqos5/codejet/main/codejet-installer.exe" -OutFile $exe; Start-Process $exe -Verb RunAs
 ```
 
 The installer will:
