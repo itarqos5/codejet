@@ -67,25 +67,33 @@ function AssistantMessage({ message, width }: { message: ChatMessage; width: num
           <MarkdownText content={message.content} width={contentWidth} />
 
           {message.fileChanges && message.fileChanges.length > 0 && (
-            <Box flexDirection="column" width={contentWidth}>
-              {message.fileChanges.map((fc, i) => (
-                <Text key={i} wrap="truncate-end">
-                  <Text color={COLOR.success}>
-                    {GLYPH.added}
-                    {fc.added}
-                  </Text>
-                  <Text color={COLOR.error}>
-                    {" "}
-                    {GLYPH.removed}
-                    {fc.removed}
-                  </Text>
-                  <Text color={COLOR.textDim}> {truncate(fc.path, contentWidth - 12)}</Text>
-                </Text>
-              ))}
-            </Box>
+            <ChangeSummary changes={message.fileChanges} width={contentWidth} />
           )}
         </Box>
       </Box>
+    </Box>
+  );
+}
+
+function ChangeSummary({ changes, width }: { changes: NonNullable<ChatMessage["fileChanges"]>; width: number }) {
+  const added = changes.reduce((sum, change) => sum + change.added, 0);
+  const removed = changes.reduce((sum, change) => sum + change.removed, 0);
+  return (
+    <Box flexDirection="column" width={width} marginTop={1}>
+      <Box flexDirection="row">
+        <Text color={COLOR.text} bold>
+          {changes.length === 1 ? "Edited 1 file" : `Edited ${changes.length} files`}
+        </Text>
+        <Text color={COLOR.success}> +{added}</Text>
+        <Text color={COLOR.error}> -{removed}</Text>
+      </Box>
+      {changes.map((fc, i) => (
+        <Box key={`${fc.path}-${i}`} flexDirection="row" width={width}>
+          <Text color={COLOR.info} wrap="truncate-end">{truncate(fc.path, Math.max(1, width - 18))}</Text>
+          <Text color={COLOR.success}> +{fc.added}</Text>
+          <Text color={COLOR.error}> -{fc.removed}</Text>
+        </Box>
+      ))}
     </Box>
   );
 }

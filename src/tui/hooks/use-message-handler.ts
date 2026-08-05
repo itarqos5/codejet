@@ -54,7 +54,7 @@ function fileMutationFor(
     case "edit":
       return { action: "modified", trackLines: true };
     case "create_file":
-      return { action: "created", trackLines: false };
+      return { action: "created", trackLines: true };
     case "create_directory":
       return { action: "created", trackLines: false };
     case "delete_file":
@@ -306,6 +306,34 @@ export function useMessageHandler({
   ): Promise<ExecutedToolCall> {
     const args = parseArgs(call.args);
     const toolName = call.name === "write_file" ? "write" : call.name;
+    const activityId = genId();
+    dispatch({
+      type: "ADD_MESSAGE",
+      message: {
+        id: activityId,
+        role: "tool",
+        content: "",
+        toolName,
+        toolStatus: "running",
+        toolDetail: toolDetail(args, ""),
+        timestamp: Date.now(),
+      },
+    });
+
+    const finishActivity = (content: string, isError: boolean) => {
+      dispatch({
+        type: "ADD_MESSAGE",
+        message: {
+          id: genId(),
+          role: "tool",
+          content,
+          toolName,
+          toolStatus: isError ? "error" : "done",
+          toolDetail: toolDetail(args, content),
+          timestamp: Date.now(),
+        },
+      });
+    };
 
     switch (toolName) {
       case "think": {
@@ -327,6 +355,7 @@ export function useMessageHandler({
           { id: call.id || genId(), name: toolName, arguments: args },
           { directory: process.cwd(), abort: signal },
         );
+        finishActivity(result.content, !!result.isError);
         return {
           content: result.content,
           isError: !!result.isError,
@@ -341,6 +370,7 @@ export function useMessageHandler({
           : undefined;
 
         if (!question) {
+          finishActivity("missing question", true);
           return {
             content: "Error: the `question` parameter is required.",
             detail: "missing question",
@@ -368,6 +398,8 @@ export function useMessageHandler({
         } finally {
           dispatch({ type: "SET_PENDING_QUESTION", question: null });
         }
+
+        finishActivity(answer, false);
 
         dispatch({
           type: "ADD_MESSAGE",
@@ -427,6 +459,8 @@ export function useMessageHandler({
           }
         }
 
+        finishActivity(result.content, isError);
+
         if (!isError && toolName === "todo") {
           dispatch({ type: "SET_TODOS", todos: await loadTodos() });
         }
@@ -435,7 +469,7 @@ export function useMessageHandler({
           content: result.content,
           detail: toolDetail(args, result.content),
           isError,
-          showToolMessage: isError || !mutation,
+          showToolMessage: false,
         };
       }
     }

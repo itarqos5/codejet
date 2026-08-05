@@ -1,4 +1,4 @@
-import React, { useCallback, useRef, useState } from "react";
+import React, { useCallback, useState } from "react";
 import { Box, Text, useInput } from "ink";
 import { COLOR, GLYPH } from "../theme.js";
 import type { AppMode } from "../state.js";
@@ -57,8 +57,6 @@ export function PromptInput({
 }) {
   const [value, setValue] = useState("");
   const [cursor, setCursor] = useState(0);
-  const history = useRef<string[]>([]);
-  const historyIndex = useRef<number>(-1);
 
   const accent = mode === "build" ? COLOR.accent : COLOR.warning;
   const contentWidth = Math.max(8, width - 4);
@@ -66,8 +64,6 @@ export function PromptInput({
   const submit = useCallback(() => {
     const trimmed = value.trim();
     if (!trimmed || busy) return;
-    history.current = [trimmed, ...history.current.filter((h) => h !== trimmed)].slice(0, 100);
-    historyIndex.current = -1;
     setValue("");
     setCursor(0);
     onSubmit(trimmed);
@@ -124,30 +120,6 @@ export function PromptInput({
             // Other ctrl combos belong to the global handler.
             return;
         }
-      }
-
-      // History recall, only when it cannot be confused with cursor movement.
-      if (key.upArrow) {
-        if (history.current.length === 0) return;
-        const next = Math.min(history.current.length - 1, historyIndex.current + 1);
-        historyIndex.current = next;
-        const recalled = history.current[next] ?? "";
-        setValue(recalled);
-        setCursor(recalled.length);
-        return;
-      }
-      if (key.downArrow) {
-        if (historyIndex.current <= 0) {
-          historyIndex.current = -1;
-          setValue("");
-          setCursor(0);
-          return;
-        }
-        historyIndex.current -= 1;
-        const recalled = history.current[historyIndex.current] ?? "";
-        setValue(recalled);
-        setCursor(recalled.length);
-        return;
       }
 
       if (key.escape || key.tab) return;

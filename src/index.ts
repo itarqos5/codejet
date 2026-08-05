@@ -11,7 +11,6 @@ import App from "./tui/app.js";
 import { setTuiActive, flushLogs } from "./api/logger.js";
 import { registerAllTools } from "./tools/index.js";
 import {
-  enterAlternateScreen,
   leaveAlternateScreen,
 } from "./tui/terminal-screen.js";
 
@@ -20,7 +19,8 @@ import {
 // live frame.
 setTuiActive(true);
 registerAllTools();
-enterAlternateScreen();
+// Keep the main terminal buffer so its native scrollbar contains the static
+// chat transcript. Ink still owns cursor updates; no raw output is printed.
 
 let restored = false;
 const restoreTerminal = () => {
