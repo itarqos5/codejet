@@ -3,8 +3,10 @@ import { Box, Text } from "ink";
 import { MarkdownText } from "./markdown.js";
 import { ThoughtBlock } from "./thinking.js";
 import { Spinner } from "./spinner.js";
+import { Row } from "./row.js";
+import { FileChangeView } from "./file-change.js";
 import { COLOR, GLYPH, truncate } from "../theme.js";
-import type { ChatMessage } from "../state.js";
+import type { ChatMessage, FileEdit } from "../state.js";
 
 /**
  * Transcript rendering.
@@ -65,81 +67,77 @@ function AssistantMessage({ message, width }: { message: ChatMessage; width: num
         <Box width={INDENT} flexShrink={0} />
         <Box flexDirection="column" width={contentWidth}>
           <MarkdownText content={message.content} width={contentWidth} />
-
-          {message.fileChanges && message.fileChanges.length > 0 && (
-            <ChangeSummary changes={message.fileChanges} width={contentWidth} />
-          )}
         </Box>
       </Box>
+      {/*
+        No per-turn file summary here. Every write already appears as its own
+        transcript entry with an inline diff, so summarising again reported the
+        same change twice with two different sets of numbers.
+      */}
     </Box>
   );
 }
 
-function ChangeSummary({ changes, width }: { changes: NonNullable<ChatMessage["fileChanges"]>; width: number }) {
-  const added = changes.reduce((sum, change) => sum + change.added, 0);
-  const removed = changes.reduce((sum, change) => sum + change.removed, 0);
+/**
+ * A tool that is currently executing. Rendered in the live frame only — never
+ * committed to the static transcript, where an animated spinner would freeze.
+ */
+export function ActiveToolRow({
+  name,
+  detail,
+  width,
+}: {
+  name: string;
+  detail?: string;
+  width: number;
+}) {
   return (
-    <Box flexDirection="column" width={width} marginTop={1}>
-      <Box flexDirection="row">
-        <Text color={COLOR.text} bold>
-          {changes.length === 1 ? "Edited 1 file" : `Edited ${changes.length} files`}
-        </Text>
-        <Text color={COLOR.success}> +{added}</Text>
-        <Text color={COLOR.error}> -{removed}</Text>
+    <Box flexDirection="row" width={width}>
+      <Box width={INDENT} flexShrink={0}>
+        <Spinner color={COLOR.tool} />
       </Box>
-      {changes.map((fc, i) => (
-        <Box key={`${fc.path}-${i}`} flexDirection="row" width={width}>
-          <Text color={COLOR.info} wrap="truncate-end">{truncate(fc.path, Math.max(1, width - 18))}</Text>
-          <Text color={COLOR.success}> +{fc.added}</Text>
-          <Text color={COLOR.error}> -{fc.removed}</Text>
-        </Box>
-      ))}
+      <Text wrap="truncate-end">
+        <Text color={COLOR.tool}>{name}</Text>
+        {detail ? (
+          <Text color={COLOR.textDim}>
+            {" "}
+            {truncate(detail, Math.max(0, width - INDENT - name.length - 2))}
+          </Text>
+        ) : null}
+      </Text>
     </Box>
   );
 }
 
 function ToolMessage({ message, width }: { message: ChatMessage; width: number }) {
   const status = message.toolStatus ?? "done";
-  const glyph =
-    status === "running" ? null : status === "error" ? GLYPH.toolFail : GLYPH.toolDone;
-  const color =
-    status === "error" ? COLOR.error : status === "running" ? COLOR.tool : COLOR.success;
-
-  const detail = message.toolDetail ?? message.content;
-  const nameWidth = (message.toolName ?? "tool").length;
-  const detailWidth = Math.max(0, width - INDENT - nameWidth - 2);
+  const color = status === "error" ? COLOR.error : COLOR.success;
+  const name = message.toolName ?? "tool";
+  const detail = message.toolDetail ?? "";
 
   return (
-    <Box flexDirection="row" width={width}>
-      <Box width={INDENT} flexShrink={0}>
-        {glyph ? <Text color={color}>{glyph}</Text> : <Spinner color={COLOR.tool} />}
-      </Box>
-      <Text wrap="truncate-end">
-        <Text color={color}>{message.toolName ?? "tool"}</Text>
-        {detail ? <Text color={COLOR.textDim}> {truncate(detail, detailWidth)}</Text> : null}
-      </Text>
-    </Box>
+    <Row
+      glyph={status === "error" ? GLYPH.toolFail : GLYPH.toolDone}
+      glyphColor={color}
+      label={name}
+      labelColor={COLOR.text}
+      value={detail}
+      valueColor={status === "error" ? COLOR.error : COLOR.muted}
+      width={width}
+    />
   );
 }
 
 function FileChangeMessage({ message, width }: { message: ChatMessage; width: number }) {
-  const action = message.fileAction ?? "modified";
-  const color =
-    action === "created" ? COLOR.success : action === "deleted" ? COLOR.error : COLOR.warning;
-  const label = action.charAt(0).toUpperCase() + action.slice(1);
+  // Prefer the rich record; fall back to the flat fields for older entries.
+  const edit: FileEdit =
+    message.fileEdit ??
+    ({
+      path: message.filePath ?? message.content,
+      action: message.fileAction ?? "modified",
+    } satisfies FileEdit);
 
-  return (
-    <Box flexDirection="row" width={width}>
-      <Gutter glyph={GLYPH.toolDone} color={color} />
-      <Text wrap="truncate-end">
-        <Text color={color}>{label}</Text>
-        <Text color={COLOR.textDim}>
-          {" "}
-          {truncate(message.filePath ?? message.content, width - INDENT - label.length - 2)}
-        </Text>
-      </Text>
-    </Box>
-  );
+  return <FileChangeView edit={edit} width={width} />;
 }
 
 function SystemMessage({ message, width }: { message: ChatMessage; width: number }) {

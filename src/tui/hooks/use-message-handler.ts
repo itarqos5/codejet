@@ -1,13 +1,14 @@
 import { useCallback, useRef } from "react";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { getModelById, getModelProvider } from "../models.js";
 import { loadKeys } from "../../api/keys.js";
 import { logger } from "../../api/logger.js";
 import { systemPromptFor, decorateOpenCodePrompt } from "../../api/prompts.js";
 import { CHAT_TOOLS } from "../../api/chat-tools.js";
 import { executeTool } from "../../api/tools.js";
+import { diffLines } from "../../api/diff.js";
 import { loadTodos } from "../../tools/todo.js";
-import type { AppState, ChatMessage, FileChange } from "../state.js";
+import type { AppState, ChatMessage, FileChange, FileEdit } from "../state.js";
 import type { SessionError } from "../../api/logger.js";
 import type { Session } from "../../api/opencode.js";
 import type {
@@ -29,6 +30,15 @@ function genId(): string {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 }
 
+/** Reads a file for diffing; unreadable or binary files diff as empty. */
+function readFileSafe(path: string): string {
+  try {
+    return readFileSync(path, "utf-8");
+  } catch {
+    return "";
+  }
+}
+
 /** Accumulates streamed tool-call fragments, keyed by their stream index. */
 interface AccumulatedToolCall {
   id: string;
@@ -40,7 +50,6 @@ interface ExecutedToolCall {
   content: string;
   detail?: string;
   isError: boolean;
-  showToolMessage: boolean;
 }
 
 type FileAction = "created" | "modified" | "deleted";
@@ -306,21 +315,17 @@ export function useMessageHandler({
   ): Promise<ExecutedToolCall> {
     const args = parseArgs(call.args);
     const toolName = call.name === "write_file" ? "write" : call.name;
-    const activityId = genId();
+
+    // In-flight state lives in the live region, not the transcript, so the
+    // spinner can animate and then disappear. Exactly one finished row is
+    // appended to the transcript per call.
     dispatch({
-      type: "ADD_MESSAGE",
-      message: {
-        id: activityId,
-        role: "tool",
-        content: "",
-        toolName,
-        toolStatus: "running",
-        toolDetail: toolDetail(args, ""),
-        timestamp: Date.now(),
-      },
+      type: "SET_ACTIVE_TOOL",
+      tool: { name: toolName, detail: toolDetail(args, "") },
     });
 
     const finishActivity = (content: string, isError: boolean) => {
+      dispatch({ type: "SET_ACTIVE_TOOL", tool: null });
       dispatch({
         type: "ADD_MESSAGE",
         message: {
@@ -356,11 +361,7 @@ export function useMessageHandler({
           { directory: process.cwd(), abort: signal },
         );
         finishActivity(result.content, !!result.isError);
-        return {
-          content: result.content,
-          isError: !!result.isError,
-          showToolMessage: false,
-        };
+        return { content: result.content, isError: !!result.isError };
       }
 
       case "ask": {
@@ -375,7 +376,6 @@ export function useMessageHandler({
             content: "Error: the `question` parameter is required.",
             detail: "missing question",
             isError: true,
-            showToolMessage: true,
           };
         }
 
@@ -405,32 +405,47 @@ export function useMessageHandler({
           type: "ADD_MESSAGE",
           message: { id: genId(), role: "user", content: answer, timestamp: Date.now() },
         });
-        return {
-          content: answer,
-          detail: answer,
-          isError: false,
-          showToolMessage: true,
-        };
+        return { content: answer, detail: answer, isError: false };
       }
 
       default: {
         const path = typeof args.path === "string" ? args.path : undefined;
+        const mutation = fileMutationFor(toolName);
+
+        // Snapshot the file before the tool runs so the diff is real rather
+        // than inferred from the arguments. Line counts derived from the
+        // arguments alone were always wrong for edits.
         const existedBefore = path ? existsSync(path) : false;
+        const before =
+          mutation?.trackLines && path && existedBefore ? readFileSafe(path) : "";
+
         const result = await executeTool(
           { id: call.id || genId(), name: toolName, arguments: args },
           { directory: process.cwd(), abort: signal },
         );
-        const mutation = fileMutationFor(toolName);
         const isError = !!result.isError || /^error:/i.test(result.content);
 
         if (isError) {
           logger.error(toolName, result.content);
         } else if (mutation && path) {
           const action = toolName === "write" && !existedBefore ? "created" : mutation.action;
-          setFileNotifications((prev) => [
-            ...prev,
-            { filePath: path, action },
-          ]);
+
+          let fileEdit: FileEdit = { path, action };
+          if (mutation.trackLines) {
+            const after = readFileSafe(path);
+            const diff = diffLines(before, after, { maxLines: 12, context: 1 });
+            fileEdit = {
+              path,
+              action,
+              added: diff.added,
+              removed: diff.removed,
+              diff: diff.lines,
+              truncated: diff.truncated,
+            };
+            fileChanges.push({ path, added: diff.added, removed: diff.removed });
+          }
+
+          setFileNotifications((prev) => [...prev, { filePath: path, action }]);
           dispatch({
             type: "ADD_MESSAGE",
             message: {
@@ -439,24 +454,10 @@ export function useMessageHandler({
               content: path,
               filePath: path,
               fileAction: action,
+              fileEdit,
               timestamp: Date.now(),
             },
           });
-
-          if (mutation.trackLines) {
-            const replacement = typeof args.content === "string" ? args.content : "";
-            const removed =
-              toolName === "edit" &&
-              typeof args.from === "number" &&
-              typeof args.to === "number"
-                ? Math.max(0, args.to - args.from + 1)
-                : 0;
-            fileChanges.push({
-              path,
-              added: replacement ? replacement.split("\n").length : 0,
-              removed,
-            });
-          }
         }
 
         finishActivity(result.content, isError);
@@ -469,7 +470,6 @@ export function useMessageHandler({
           content: result.content,
           detail: toolDetail(args, result.content),
           isError,
-          showToolMessage: false,
         };
       }
     }
@@ -594,21 +594,8 @@ export function useMessageHandler({
         const call = calls[i];
         toolNames.push(call.name);
 
+        // runToolCall already appends exactly one finished transcript row.
         const executed = await runToolCall(call, fileChanges, signal);
-        if (executed.showToolMessage) {
-          dispatch({
-            type: "ADD_MESSAGE",
-            message: {
-              id: genId(),
-              role: "tool",
-              content: executed.content,
-              toolName: call.name,
-              toolStatus: executed.isError ? "error" : "done",
-              toolDetail: executed.detail,
-              timestamp: Date.now(),
-            },
-          });
-        }
 
         wire.push({
           role: "tool",

@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useReducer, useRef, useState } 
 import { Box, Static, Text, useApp } from "ink";
 
 import { Welcome } from "./components/header.js";
-import { MessageView, LiveMessage, EmptyState } from "./components/chat.js";
+import { MessageView, LiveMessage, EmptyState, ActiveToolRow } from "./components/chat.js";
 import { PromptInput } from "./components/input.js";
 import { StatusBar } from "./components/statusbar.js";
 import { CommandPalette, ModelPalette } from "./components/modal.js";
@@ -204,6 +204,7 @@ export default function App() {
     1 + // status bar
     // Thinking indicator is a header row plus up to 2 dimmed detail rows.
     (state.thinking ? 3 : 0) +
+    (state.activeTool ? 1 : 0) +
     (state.error ? 1 : 0) +
     fileNotifications.length +
     paletteRows +
@@ -272,6 +273,14 @@ export default function App() {
             since={state.thinkingSince ?? Date.now()}
             width={width}
             maxDetailLines={maxLiveLines > 6 ? 2 : 0}
+          />
+        )}
+
+        {state.activeTool && (
+          <ActiveToolRow
+            name={state.activeTool.name}
+            detail={state.activeTool.detail}
+            width={width}
           />
         )}
 

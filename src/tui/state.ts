@@ -1,5 +1,6 @@
 import type { Todo } from "../tools/todo.js";
 import type { ModelProvider } from "./models.js";
+import type { DiffLine } from "../api/diff.js";
 
 export type AppMode = "build" | "plan";
 
@@ -7,6 +8,21 @@ export interface FileChange {
   path: string;
   added: number;
   removed: number;
+}
+
+/**
+ * A file the agent touched, with enough detail to render a diff. Captured at
+ * the moment of the write so the transcript keeps showing what changed even
+ * after the file is modified again later.
+ */
+export interface FileEdit {
+  path: string;
+  action: "created" | "modified" | "deleted";
+  added?: number;
+  removed?: number;
+  diff?: DiffLine[];
+  /** The stored diff omits some changed lines. */
+  truncated?: boolean;
 }
 
 export type MessageRole =
@@ -40,6 +56,8 @@ export interface ChatMessage {
   /** File activity */
   filePath?: string;
   fileAction?: "created" | "modified" | "deleted";
+  /** Full detail for a "file-change" entry, including its diff. */
+  fileEdit?: FileEdit;
 
   toolCalls?: string[];
   fileChanges?: FileChange[];
@@ -84,6 +102,16 @@ export interface AppState {
   /** Short label for the current activity, e.g. "Thinking", "Connecting". */
   activityLabel: string;
 
+  /**
+   * The tool currently executing.
+   *
+   * Deliberately app state rather than a transcript entry: in-flight rows need
+   * a live spinner, and the transcript is written to the terminal once and never
+   * redrawn, so a "running" row committed there would keep a frozen spinner
+   * forever. Only the finished row is appended to the transcript.
+   */
+  activeTool: { name: string; detail?: string } | null;
+
   cancelPending: boolean;
   todos: Todo[];
   pendingQuestion: PendingQuestion | null;
@@ -110,6 +138,7 @@ export type AppAction =
   | { type: "SET_THINKING_TEXT"; text: string }
   | { type: "APPEND_THINKING_TEXT"; text: string }
   | { type: "SET_ACTIVITY_LABEL"; label: string }
+  | { type: "SET_ACTIVE_TOOL"; tool: { name: string; detail?: string } | null }
   | { type: "SET_CANCEL_PENDING"; pending: boolean }
   | { type: "SET_TODOS"; todos: Todo[] }
   | { type: "SET_PENDING_QUESTION"; question: PendingQuestion | null }
@@ -165,6 +194,7 @@ export function appReducer(state: AppState, action: AppAction): AppState {
             thinkingSince: null,
             streamingContent: "",
             activityLabel: "",
+            activeTool: null,
           };
 
     case "SET_STREAMING_CONTENT":
@@ -191,6 +221,9 @@ export function appReducer(state: AppState, action: AppAction): AppState {
 
     case "SET_ACTIVITY_LABEL":
       return { ...state, activityLabel: action.label };
+
+    case "SET_ACTIVE_TOOL":
+      return { ...state, activeTool: action.tool };
 
     case "SET_CANCEL_PENDING":
       return { ...state, cancelPending: action.pending };
@@ -249,6 +282,7 @@ export const INITIAL_STATE: AppState = {
   thinkingSince: null,
   thinkingText: "",
   activityLabel: "",
+  activeTool: null,
   cancelPending: false,
   todos: [],
   pendingQuestion: null,
