@@ -14,6 +14,11 @@ import {
   leaveAlternateScreen,
 } from "./tui/terminal-screen.js";
 
+if (process.argv.slice(2).includes("--desktop")) {
+  console.log("Coming soon");
+  process.exit(0);
+}
+
 // Route all diagnostic logging to the on-disk log file while the TUI owns the
 // terminal. Any stray console output would otherwise be interleaved into the
 // live frame.
