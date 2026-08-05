@@ -89,3 +89,18 @@ export function truncate(text: string, width: number): string {
   if (width <= 1) return clean.slice(0, width);
   return clean.slice(0, width - 1) + "…";
 }
+
+/**
+ * Width clamp that preserves whitespace exactly.
+ *
+ * Use this for anything whose spacing is meaningful — ASCII art, diff bodies,
+ * indented code. `truncate` collapses runs of whitespace, which silently
+ * destroys alignment (it was flattening the leading spaces out of the startup
+ * wordmark and shearing the letters).
+ */
+export function clamp(text: string, width: number): string {
+  if (width <= 0) return "";
+  if (text.length <= width) return text;
+  if (width <= 1) return text.slice(0, width);
+  return text.slice(0, width - 1) + "…";
+}

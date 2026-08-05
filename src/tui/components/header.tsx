@@ -1,7 +1,7 @@
 import React from "react";
 import figlet from "figlet";
 import { Box, Text } from "ink";
-import { COLOR, truncate } from "../theme.js";
+import { COLOR, clamp, truncate } from "../theme.js";
 import { VERSION } from "../models.js";
 
 /**
@@ -50,8 +50,10 @@ export function Welcome({
       <Box height={1} />
       {logo ? (
         logo.map((line, index) => (
+          // clamp, not truncate: the wordmark's leading spaces carry the
+          // letterforms, and collapsing them shears the art apart.
           <Text key={index} color={COLOR.accent} bold wrap="truncate-end">
-            {truncate(line, safeWidth)}
+            {clamp(line, safeWidth)}
           </Text>
         ))
       ) : (
