@@ -29,6 +29,10 @@ Guidelines:
 - \`think\` has no side effects and returns nothing useful. Never use it to
   communicate with the user, and never put your final answer inside it.
 - Keep the reasoning in \`think\` and keep your visible reply clean and direct.
+- NEVER narrate reasoning, analysis, or observations in your visible reply —
+  no "The user said…", no "This is a simple request…", no restating the task,
+  no thinking out loud. If it is not part of the answer, it belongs in \`think\`.
+  Your visible reply starts with the answer itself.
 `.trim();
 
 const IDENTITY = `
@@ -91,7 +95,10 @@ export function systemPromptFor(mode: "build" | "plan"): string {
  */
 export function decorateOpenCodePrompt(content: string, mode: "build" | "plan"): string {
   const thinkHint =
-    "Think step by step before acting; if you have a think tool available, use it for your reasoning.";
+    "Use the think tool for ALL reasoning and analysis. Never write reasoning, " +
+    "observations, or meta-commentary (such as describing what the user said or " +
+    "narrating what you are about to do) in your visible reply — start the reply " +
+    "with the direct answer itself.";
 
   if (mode === "plan") {
     return [
@@ -106,5 +113,5 @@ export function decorateOpenCodePrompt(content: string, mode: "build" | "plan"):
     ].join("\n");
   }
 
-  return content;
+  return [thinkHint, "", content].join("\n");
 }
