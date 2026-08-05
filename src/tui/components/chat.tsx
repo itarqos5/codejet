@@ -30,12 +30,21 @@ function Gutter({ glyph, color }: { glyph: string; color: string }) {
 function UserMessage({ message, width }: { message: ChatMessage; width: number }) {
   const contentWidth = Math.max(12, width - INDENT);
   return (
-    <Box flexDirection="row" width={width}>
-      <Gutter glyph={GLYPH.user} color={COLOR.user} />
-      <Box flexDirection="column" width={contentWidth}>
-        <Text color={COLOR.text} wrap="wrap">
-          {message.content}
+    <Box flexDirection="column" width={width}>
+      <Box flexDirection="row">
+        <Text color={COLOR.user}>{GLYPH.user} </Text>
+        <Text color={COLOR.user} bold>
+          You
         </Text>
+      </Box>
+
+      <Box flexDirection="row" width={width}>
+        <Box width={INDENT} flexShrink={0} />
+        <Box flexDirection="column" width={contentWidth}>
+          <Text color={COLOR.text} wrap="wrap">
+            {message.content}
+          </Text>
+        </Box>
       </Box>
     </Box>
   );

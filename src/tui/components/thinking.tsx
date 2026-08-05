@@ -85,7 +85,7 @@ export function ThoughtBlock({
   return (
     <Box flexDirection="row" width={safeWidth}>
       <Text color={COLOR.thinking}>{GLYPH.thinking} </Text>
-      <Text color={COLOR.muted} dimColor wrap="truncate-end">
+      <Text color={COLOR.text} wrap="truncate-end">
         {truncate(label, safeWidth - 3)}
       </Text>
     </Box>
