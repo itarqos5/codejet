@@ -57,16 +57,17 @@ function FileChangeDisplay({ message }: { message: ChatMessage }) {
 
 function UserMessage({ message }: { message: ChatMessage }) {
   const columns = process.stdout.columns ?? 80;
-  const maxWidth = Math.min(columns - 8, 70);
+  const maxWidth = Math.min(columns - 8, 76);
+  const contentWidth = Math.max(20, maxWidth - 4);
   
   return (
-    <Box flexDirection="column" borderStyle="round" borderColor="blue" paddingX={1} paddingY={0} marginBottom={1} width={maxWidth}>
+    <Box flexDirection="column" borderStyle="round" borderColor="blue" paddingX={1} paddingY={0} marginBottom={1}>
       <Box gap={1}>
         <Text color="blue" bold>▸</Text>
         <Text color="blue" bold>User</Text>
       </Box>
-      <Box paddingLeft={2}>
-        <MarkdownText content={message.content} />
+      <Box paddingLeft={2} width={contentWidth}>
+        <MarkdownText content={message.content} maxWidth={contentWidth} />
       </Box>
     </Box>
   );
@@ -74,16 +75,17 @@ function UserMessage({ message }: { message: ChatMessage }) {
 
 function AssistantMessage({ message }: { message: ChatMessage }) {
   const columns = process.stdout.columns ?? 80;
-  const maxWidth = Math.min(columns - 8, 70);
+  const maxWidth = Math.min(columns - 8, 76);
+  const contentWidth = Math.max(20, maxWidth - 4);
   
   return (
-    <Box flexDirection="column" borderStyle="round" borderColor="cyan" paddingX={1} paddingY={0} marginBottom={1} width={maxWidth}>
+    <Box flexDirection="column" borderStyle="round" borderColor="cyan" paddingX={1} paddingY={0} marginBottom={1}>
       <Box gap={1}>
         <Text color="cyan" bold>◈</Text>
         <Text color="cyan" bold>{message.modelName ?? "assistant"}</Text>
       </Box>
-      <Box paddingLeft={2}>
-        <MarkdownText content={message.content} />
+      <Box paddingLeft={2} width={contentWidth}>
+        <MarkdownText content={message.content} maxWidth={contentWidth} />
       </Box>
       {message.fileChanges && message.fileChanges.length > 0 && (
         <Box flexDirection="column" paddingTop={1} paddingLeft={2}>
@@ -119,18 +121,19 @@ function SystemMessage({ message }: { message: ChatMessage }) {
 
 function StreamingMessage({ content, model }: { content: string; model: string }) {
   const columns = process.stdout.columns ?? 80;
-  const maxWidth = Math.min(columns - 8, 70);
+  const maxWidth = Math.min(columns - 8, 76);
+  const contentWidth = Math.max(20, maxWidth - 4);
   
   if (!content) return null;
   return (
-    <Box flexDirection="column" borderStyle="round" borderColor="#00ff88" paddingX={1} paddingY={0} marginBottom={1} width={maxWidth}>
+    <Box flexDirection="column" borderStyle="round" borderColor="#00ff88" paddingX={1} paddingY={0} marginBottom={1}>
       <Box gap={1}>
         <Text color="#00ff88" bold>◉</Text>
         <Text color="#00ff88" bold>{model}</Text>
         <Text color="gray" dimColor>streaming...</Text>
       </Box>
-      <Box paddingLeft={2}>
-        <MarkdownText content={content} />
+      <Box paddingLeft={2} width={contentWidth}>
+        <MarkdownText content={content} maxWidth={contentWidth} />
       </Box>
       {/* Animated cursor */}
       <Box>
