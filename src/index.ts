@@ -9,11 +9,13 @@ import React from "react";
 import { render } from "ink";
 import App from "./tui/app.js";
 import { setTuiActive, flushLogs } from "./api/logger.js";
+import { registerAllTools } from "./tools/index.js";
 
 // Route all diagnostic logging to the on-disk log file while the TUI owns the
 // terminal. Any stray console output would otherwise be interleaved into the
 // live frame.
 setTuiActive(true);
+registerAllTools();
 
 const instance = render(React.createElement(App), {
   exitOnCtrlC: false,

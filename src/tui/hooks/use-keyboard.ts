@@ -115,11 +115,17 @@ export function useKeyboard({
     // ── Question with fixed options ─────────────────────────
     if (state.pendingQuestion) {
       const options = state.pendingQuestion.options ?? [];
+      if (key.escape) {
+        state.pendingQuestion.resolve("User cancelled the question.");
+        dispatch({ type: "SET_PENDING_QUESTION", question: null });
+        setQuestionIndex(0);
+        return;
+      }
       if (options.length === 0) return; // free text: the prompt handles it
 
-      if (key.upArrow) {
+      if (key.upArrow || input === "k") {
         setQuestionIndex((prev) => Math.max(0, prev - 1));
-      } else if (key.downArrow) {
+      } else if (key.downArrow || input === "j") {
         setQuestionIndex((prev) => Math.min(options.length - 1, prev + 1));
       } else if (key.return) {
         const answer = options[Math.min(questionIndex, options.length - 1)];

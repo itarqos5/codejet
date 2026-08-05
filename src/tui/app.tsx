@@ -20,7 +20,6 @@ import { COLOR } from "./theme.js";
 import { useKeyboard, type PaletteMode } from "./hooks/use-keyboard.js";
 import { useMessageHandler } from "./hooks/use-message-handler.js";
 import { useTerminalSize } from "./hooks/use-terminal-size.js";
-import { registerAllTools } from "../tools/index.js";
 import { loadTodos } from "../tools/todo.js";
 import type { SessionError } from "../api/logger.js";
 
@@ -73,9 +72,6 @@ export default function App() {
 
   // ── Startup ─────────────────────────────────────────────────
   useEffect(() => {
-    // Populate the shared tool registry (this includes the think tool).
-    registerAllTools();
-
     import("../api/opencode-server.js")
       .then(async (mod) => {
         const ok = await mod.startServer();
@@ -327,7 +323,7 @@ export default function App() {
         <PromptInput
           mode={state.mode}
           disabled={promptDisabled}
-          busy={state.streaming}
+          busy={state.streaming && !freeTextQuestion}
           width={width}
           onSubmit={onSubmit}
         />

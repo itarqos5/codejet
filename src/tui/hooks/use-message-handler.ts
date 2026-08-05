@@ -4,8 +4,8 @@ import { loadKeys } from "../../api/keys.js";
 import { logger } from "../../api/logger.js";
 import { systemPromptFor, decorateOpenCodePrompt } from "../../api/prompts.js";
 import { CHAT_TOOLS } from "../../api/chat-tools.js";
-import { thinkTool } from "../../tools/think.js";
-import { writeTool } from "../../tools/write.js";
+import { executeTool } from "../../api/tools.js";
+import { loadTodos } from "../../tools/todo.js";
 import type { AppState, ChatMessage, FileChange } from "../state.js";
 import type { SessionError } from "../../api/logger.js";
 import type { Session } from "../../api/opencode.js";
@@ -33,6 +33,44 @@ interface AccumulatedToolCall {
   id: string;
   name: string;
   args: string;
+}
+
+interface ExecutedToolCall {
+  content: string;
+  detail?: string;
+  isError: boolean;
+  showToolMessage: boolean;
+}
+
+type FileAction = "created" | "modified" | "deleted";
+
+function fileMutationFor(
+  toolName: string,
+): { action: FileAction; trackLines: boolean } | null {
+  switch (toolName) {
+    case "write":
+      return { action: "modified", trackLines: true };
+    case "edit":
+      return { action: "modified", trackLines: true };
+    case "create_file":
+      return { action: "created", trackLines: false };
+    case "create_directory":
+      return { action: "created", trackLines: false };
+    case "delete_file":
+      return { action: "deleted", trackLines: false };
+    case "delete_directory":
+      return { action: "deleted", trackLines: false };
+    default:
+      return null;
+  }
+}
+
+function toolDetail(args: Record<string, unknown>, output: string): string {
+  for (const key of ["path", "command", "url", "pattern", "action"]) {
+    const value = args[key];
+    if (typeof value === "string" && value.trim()) return value;
+  }
+  return output.split("\n", 1)[0] ?? "";
 }
 
 /**
@@ -197,10 +235,12 @@ export function useMessageHandler({
   async function runToolCall(
     call: AccumulatedToolCall,
     fileChanges: FileChange[],
-  ): Promise<string> {
+    signal: AbortSignal,
+  ): Promise<ExecutedToolCall> {
     const args = parseArgs(call.args);
+    const toolName = call.name === "write_file" ? "write" : call.name;
 
-    switch (call.name) {
+    switch (toolName) {
       case "think": {
         const thought = typeof args.thought === "string" ? args.thought : "";
         const nextStep = typeof args.next_step === "string" ? args.next_step : undefined;
@@ -210,7 +250,7 @@ export function useMessageHandler({
           dispatch({ type: "SET_THINKING", thinking: true, label: "Thinking" });
           dispatch({
             type: "APPEND_THINKING_TEXT",
-            text: (state.thinkingText ? "\n" : "") + thought,
+            text: thought + "\n",
           });
           dispatch({
             type: "ADD_MESSAGE",
@@ -223,7 +263,15 @@ export function useMessageHandler({
           });
         }
 
-        return thinkTool.execute(args, {});
+        const result = await executeTool(
+          { id: call.id || genId(), name: toolName, arguments: args },
+          { directory: process.cwd(), abort: signal },
+        );
+        return {
+          content: result.content,
+          isError: !!result.isError,
+          showToolMessage: false,
+        };
       }
 
       case "ask": {
@@ -232,40 +280,63 @@ export function useMessageHandler({
           ? (args.options as unknown[]).filter((o): o is string => typeof o === "string")
           : undefined;
 
-        if (!question) return "Error: the `question` parameter is required.";
+        if (!question) {
+          return {
+            content: "Error: the `question` parameter is required.",
+            detail: "missing question",
+            isError: true,
+            showToolMessage: true,
+          };
+        }
 
-        const answer = await new Promise<string>((resolve) => {
-          dispatch({
-            type: "SET_PENDING_QUESTION",
-            question: { id: genId(), question, options, resolve },
+        let answer: string;
+        try {
+          answer = await new Promise<string>((resolve, reject) => {
+            const onAbort = () => reject(new Error("Aborted"));
+            signal.addEventListener("abort", onAbort, { once: true });
+
+            const finish = (value: string) => {
+              signal.removeEventListener("abort", onAbort);
+              resolve(value);
+            };
+
+            dispatch({
+              type: "SET_PENDING_QUESTION",
+              question: { id: genId(), question, options, resolve: finish },
+            });
           });
-        });
-        dispatch({ type: "SET_PENDING_QUESTION", question: null });
+        } finally {
+          dispatch({ type: "SET_PENDING_QUESTION", question: null });
+        }
 
         dispatch({
           type: "ADD_MESSAGE",
           message: { id: genId(), role: "user", content: answer, timestamp: Date.now() },
         });
-        return answer;
+        return {
+          content: answer,
+          detail: answer,
+          isError: false,
+          showToolMessage: true,
+        };
       }
 
-      case "write_file": {
-        const path = typeof args.path === "string" ? args.path : "";
-        const fileContent = typeof args.content === "string" ? args.content : "";
-        if (!path) return "Error: the `path` parameter is required.";
+      default: {
+        const result = await executeTool(
+          { id: call.id || genId(), name: toolName, arguments: args },
+          { directory: process.cwd(), abort: signal },
+        );
+        const path = typeof args.path === "string" ? args.path : undefined;
+        const mutation = fileMutationFor(toolName);
+        const isError = !!result.isError || /^error:/i.test(result.content);
 
-        try {
-          // Actually write the file. The previous implementation reported
-          // success to the model without touching the disk, so the model
-          // believed edits had been applied when nothing had changed.
-          const result = await writeTool.execute({ path, content: fileContent }, {});
-
-          setFileNotifications((prev) => [...prev, { filePath: path, action: "modified" }]);
-          fileChanges.push({
-            path,
-            added: fileContent ? fileContent.split("\n").length : 0,
-            removed: 0,
-          });
+        if (isError) {
+          logger.error(toolName, result.content);
+        } else if (mutation && path) {
+          setFileNotifications((prev) => [
+            ...prev,
+            { filePath: path, action: mutation.action },
+          ]);
           dispatch({
             type: "ADD_MESSAGE",
             message: {
@@ -273,32 +344,38 @@ export function useMessageHandler({
               role: "file-change",
               content: path,
               filePath: path,
-              fileAction: "modified",
+              fileAction: mutation.action,
               timestamp: Date.now(),
             },
           });
-          return result;
-        } catch (err) {
-          const message = err instanceof Error ? err.message : String(err);
-          logger.error("write_file", message);
-          dispatch({
-            type: "ADD_MESSAGE",
-            message: {
-              id: genId(),
-              role: "tool",
-              content: message,
-              toolName: "write_file",
-              toolStatus: "error",
-              toolDetail: message,
-              timestamp: Date.now(),
-            },
-          });
-          return `Error writing ${path}: ${message}`;
-        }
-      }
 
-      default:
-        return `Unknown tool: ${call.name}`;
+          if (mutation.trackLines) {
+            const replacement = typeof args.content === "string" ? args.content : "";
+            const removed =
+              toolName === "edit" &&
+              typeof args.from === "number" &&
+              typeof args.to === "number"
+                ? Math.max(0, args.to - args.from + 1)
+                : 0;
+            fileChanges.push({
+              path,
+              added: replacement ? replacement.split("\n").length : 0,
+              removed,
+            });
+          }
+        }
+
+        if (!isError && toolName === "todo") {
+          dispatch({ type: "SET_TODOS", todos: await loadTodos() });
+        }
+
+        return {
+          content: result.content,
+          detail: toolDetail(args, result.content),
+          isError,
+          showToolMessage: isError || !mutation,
+        };
+      }
     }
   }
 
@@ -419,26 +496,25 @@ export function useMessageHandler({
         const call = calls[i];
         toolNames.push(call.name);
 
-        // think() is already surfaced as a thought; other tools get a row.
-        if (call.name !== "think") {
+        const executed = await runToolCall(call, fileChanges, signal);
+        if (executed.showToolMessage) {
           dispatch({
             type: "ADD_MESSAGE",
             message: {
               id: genId(),
               role: "tool",
-              content: call.name,
+              content: executed.content,
               toolName: call.name,
-              toolStatus: "done",
-              toolDetail: parseArgs(call.args).path as string | undefined,
+              toolStatus: executed.isError ? "error" : "done",
+              toolDetail: executed.detail,
               timestamp: Date.now(),
             },
           });
         }
 
-        const output = await runToolCall(call, fileChanges);
         wire.push({
           role: "tool",
-          content: output,
+          content: executed.content,
           tool_call_id: wireToolCalls[i].id,
           name: call.name,
         });
