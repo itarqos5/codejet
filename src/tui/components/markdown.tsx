@@ -9,6 +9,42 @@ interface MdSegment {
   color?: string;
 }
 
+// Word wrap function to ensure text doesn't overflow
+function wrapText(text: string, maxWidth: number): string[] {
+  if (maxWidth <= 0) return [text];
+  
+  const lines: string[] = [];
+  const paragraphs = text.split('\n');
+  
+  for (const paragraph of paragraphs) {
+    if (paragraph === '') {
+      lines.push('');
+      continue;
+    }
+    
+    const words = paragraph.split(' ');
+    let currentLine = '';
+    
+    for (const word of words) {
+      const testLine = currentLine ? `${currentLine} ${word}` : word;
+      
+      // Check if adding this word exceeds the max width
+      if (testLine.length > maxWidth && currentLine) {
+        lines.push(currentLine);
+        currentLine = word;
+      } else {
+        currentLine = testLine;
+      }
+    }
+    
+    if (currentLine) {
+      lines.push(currentLine);
+    }
+  }
+  
+  return lines;
+}
+
 function parseInline(text: string): MdSegment[] {
   const segments: MdSegment[] = [];
   const regex = /(`[^`]+`|\*\*[^*]+\*\*|\*[^*]+\*|\[([^\]]+)\]\([^)]+\))/g;
@@ -59,7 +95,10 @@ function InlineText({ segments }: { segments: MdSegment[] }) {
   );
 }
 
-export function MarkdownText({ content }: { content: string }) {
+export function MarkdownText({ content, maxWidth }: { content: string; maxWidth?: number }) {
+  const columns = maxWidth ?? Math.min(process.stdout.columns ?? 80, 76);
+  const usableWidth = Math.max(20, columns - 4); // Reserve space for borders/padding
+  
   const lines = content.split("\n");
   const elements: React.ReactNode[] = [];
   let inCodeBlock = false;
@@ -75,7 +114,7 @@ export function MarkdownText({ content }: { content: string }) {
           <Box key={`code-${i}`} flexDirection="column" paddingLeft={2} marginBottom={1}>
             {codeLines.map((cl, j) => (
               <Text key={j} color="green" dimColor>
-                {cl}
+                {cl.length > usableWidth ? cl.slice(0, usableWidth - 3) + "..." : cl}
               </Text>
             ))}
           </Box>
@@ -95,68 +134,94 @@ export function MarkdownText({ content }: { content: string }) {
     }
 
     if (line.startsWith("# ")) {
+      const headerText = line.slice(2);
       elements.push(
         <Box key={i} marginBottom={0}>
           <Text bold color="cyan">
-            {line.slice(2)}
+            {headerText}
           </Text>
         </Box>
       );
     } else if (line.startsWith("## ")) {
+      const headerText = line.slice(3);
       elements.push(
         <Box key={i} marginBottom={0}>
           <Text bold color="blue">
-            {line.slice(3)}
+            {headerText}
           </Text>
         </Box>
       );
     } else if (line.startsWith("### ")) {
+      const headerText = line.slice(4);
       elements.push(
         <Box key={i} marginBottom={0}>
           <Text bold color="magenta">
-            {line.slice(4)}
+            {headerText}
           </Text>
         </Box>
       );
     } else if (line.startsWith("- ") || line.startsWith("* ")) {
+      const bulletContent = line.slice(2);
+      const wrappedLines = wrapText(bulletContent, usableWidth - 3);
       elements.push(
         <Box key={i} paddingLeft={2} gap={1}>
           <Text color="cyan">•</Text>
-          <InlineText segments={parseInline(line.slice(2))} />
+          <Box flexDirection="column">
+            {wrappedLines.map((wl, wi) => (
+              <InlineText key={wi} segments={parseInline(wl)} />
+            ))}
+          </Box>
         </Box>
       );
     } else if (/^\d+\.\s/.test(line)) {
       const num = line.match(/^(\d+)\.\s/)?.[1] ?? "";
       const rest = line.replace(/^\d+\.\s/, "");
+      const wrappedLines = wrapText(rest, usableWidth - num.length - 4);
       elements.push(
         <Box key={i} paddingLeft={2} gap={1}>
           <Text color="cyan">{num}.</Text>
-          <InlineText segments={parseInline(rest)} />
+          <Box flexDirection="column">
+            {wrappedLines.map((wl, wi) => (
+              <InlineText key={wi} segments={parseInline(wl)} />
+            ))}
+          </Box>
         </Box>
       );
     } else if (line.startsWith("> ")) {
+      const quoteText = line.slice(2);
+      const wrappedLines = wrapText(quoteText, usableWidth - 3);
       elements.push(
-        <Box key={i} paddingLeft={2} gap={1}>
+        <Box key={i} paddingLeft={2} gap={1} flexDirection="row">
           <Text color="gray" dimColor>│</Text>
-          <Text italic color="gray">
-            {line.slice(2)}
-          </Text>
+          <Box flexDirection="column">
+            {wrappedLines.map((wl, wi) => (
+              <Text key={wi} italic color="gray">
+                {wl}
+              </Text>
+            ))}
+          </Box>
         </Box>
       );
     } else if (line.startsWith("---") || line.startsWith("***")) {
       elements.push(
         <Box key={i} paddingTop={0} paddingBottom={0}>
           <Text color="gray" dimColor>
-            {"─".repeat(Math.min(40, process.stdout.columns ?? 80))}
+            {"─".repeat(Math.min(40, usableWidth))}
           </Text>
         </Box>
       );
     } else if (line.trim() === "") {
-      elements.push(<Text key={i}>{" "}</Text>);
+      elements.push(<Text key={i}> </Text>);
     } else {
+      // Regular paragraph - wrap text properly
+      const wrappedLines = wrapText(line, usableWidth);
       elements.push(
-        <Box key={i}>
-          <InlineText segments={parseInline(line)} />
+        <Box key={i} flexDirection="column">
+          {wrappedLines.map((wl, wi) => (
+            <Box key={wi}>
+              <InlineText segments={parseInline(wl)} />
+            </Box>
+          ))}
         </Box>
       );
     }
@@ -167,7 +232,7 @@ export function MarkdownText({ content }: { content: string }) {
       <Box key="code-end" flexDirection="column" paddingLeft={2} marginBottom={1}>
         {codeLines.map((cl, j) => (
           <Text key={j} color="green" dimColor>
-            {cl}
+            {cl.length > usableWidth ? cl.slice(0, usableWidth - 3) + "..." : cl}
           </Text>
         ))}
       </Box>
