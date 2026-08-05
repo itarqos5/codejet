@@ -1,5 +1,6 @@
 import { readFile, writeFile } from "node:fs/promises";
 import type { ToolDefinition } from "../api/tools.js";
+import { resolveToolPath } from "./path.js";
 
 export const editTool: ToolDefinition = {
   name: "edit",
@@ -15,8 +16,8 @@ export const editTool: ToolDefinition = {
     },
     required: ["path", "from", "to", "content"],
   },
-  async execute(args) {
-    const path = args.path as string;
+  async execute(args, context) {
+    const path = resolveToolPath(args.path, context);
     const from = args.from as number;
     const to = args.to as number;
     const content = args.content as string;

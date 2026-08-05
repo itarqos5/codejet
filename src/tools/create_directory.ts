@@ -1,5 +1,6 @@
 import { mkdir } from "node:fs/promises";
 import type { ToolDefinition } from "../api/tools.js";
+import { resolveToolPath } from "./path.js";
 
 export const createDirectoryTool: ToolDefinition = {
   name: "create_directory",
@@ -11,8 +12,8 @@ export const createDirectoryTool: ToolDefinition = {
     },
     required: ["path"],
   },
-  async execute(args) {
-    const path = args.path as string;
+  async execute(args, context) {
+    const path = resolveToolPath(args.path, context);
     await mkdir(path, { recursive: true });
     return `Created directory ${path}`;
   },

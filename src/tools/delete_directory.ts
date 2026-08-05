@@ -1,5 +1,6 @@
 import { rm } from "node:fs/promises";
 import type { ToolDefinition } from "../api/tools.js";
+import { resolveToolPath } from "./path.js";
 
 export const deleteDirectoryTool: ToolDefinition = {
   name: "delete_directory",
@@ -11,8 +12,8 @@ export const deleteDirectoryTool: ToolDefinition = {
     },
     required: ["path"],
   },
-  async execute(args) {
-    const path = args.path as string;
+  async execute(args, context) {
+    const path = resolveToolPath(args.path, context);
     await rm(path, { recursive: true, force: true });
     return `Deleted directory ${path}`;
   },

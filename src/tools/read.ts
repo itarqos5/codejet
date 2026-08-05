@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises";
 import type { ToolDefinition } from "../api/tools.js";
+import { resolveToolPath } from "./path.js";
 
 export const readTool: ToolDefinition = {
   name: "read",
@@ -11,8 +12,8 @@ export const readTool: ToolDefinition = {
     },
     required: ["path"],
   },
-  async execute(args) {
-    const path = args.path as string;
+  async execute(args, context) {
+    const path = resolveToolPath(args.path, context);
     const raw = await readFile(path, "utf-8");
     const lines = raw.split("\n");
     const numbered = lines

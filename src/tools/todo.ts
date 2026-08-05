@@ -1,5 +1,5 @@
 import { readFile, writeFile, mkdir } from "node:fs/promises";
-import { dirname } from "node:path";
+import { dirname, resolve } from "node:path";
 import type { ToolDefinition } from "../api/tools.js";
 
 const TODO_PATH = ".codejet/todos.json";
@@ -11,18 +11,23 @@ export interface Todo {
   created: number;
 }
 
-export async function loadTodos(): Promise<Todo[]> {
+function todoPath(directory: string): string {
+  return resolve(directory, TODO_PATH);
+}
+
+export async function loadTodos(directory = process.cwd()): Promise<Todo[]> {
   try {
-    const raw = await readFile(TODO_PATH, "utf-8");
+    const raw = await readFile(todoPath(directory), "utf-8");
     return JSON.parse(raw) as Todo[];
   } catch {
     return [];
   }
 }
 
-async function saveTodos(todos: Todo[]): Promise<void> {
-  await mkdir(dirname(TODO_PATH), { recursive: true });
-  await writeFile(TODO_PATH, JSON.stringify(todos, null, 2), "utf-8");
+async function saveTodos(todos: Todo[], directory: string): Promise<void> {
+  const path = todoPath(directory);
+  await mkdir(dirname(path), { recursive: true });
+  await writeFile(path, JSON.stringify(todos, null, 2), "utf-8");
 }
 
 export const todoTool: ToolDefinition = {
@@ -41,9 +46,10 @@ export const todoTool: ToolDefinition = {
     },
     required: ["action"],
   },
-  async execute(args) {
+  async execute(args, context) {
     const action = args.action as string;
-    const todos = await loadTodos();
+    const directory = context.directory ?? process.cwd();
+    const todos = await loadTodos(directory);
 
     switch (action) {
       case "add": {
@@ -51,7 +57,7 @@ export const todoTool: ToolDefinition = {
         if (!text) return "Error: text is required for add";
         const id = todos.length > 0 ? Math.max(...todos.map((t) => t.id)) + 1 : 1;
         todos.push({ id, text, done: false, created: Date.now() });
-        await saveTodos(todos);
+        await saveTodos(todos, directory);
         return `Added todo #${id}: ${text}`;
       }
 
@@ -68,7 +74,7 @@ export const todoTool: ToolDefinition = {
         const todo = todos.find((t) => t.id === id);
         if (!todo) return `Error: todo #${id} not found`;
         todo.done = true;
-        await saveTodos(todos);
+        await saveTodos(todos, directory);
         return `Completed todo #${id}: ${todo.text}`;
       }
 
@@ -78,7 +84,7 @@ export const todoTool: ToolDefinition = {
         const idx = todos.findIndex((t) => t.id === id);
         if (idx === -1) return `Error: todo #${id} not found`;
         const [removed] = todos.splice(idx, 1);
-        await saveTodos(todos);
+        await saveTodos(todos, directory);
         return `Removed todo #${id}: ${removed.text}`;
       }
 

@@ -1,5 +1,6 @@
 import { unlink } from "node:fs/promises";
 import type { ToolDefinition } from "../api/tools.js";
+import { resolveToolPath } from "./path.js";
 
 export const deleteFileTool: ToolDefinition = {
   name: "delete_file",
@@ -11,8 +12,8 @@ export const deleteFileTool: ToolDefinition = {
     },
     required: ["path"],
   },
-  async execute(args) {
-    const path = args.path as string;
+  async execute(args, context) {
+    const path = resolveToolPath(args.path, context);
     await unlink(path);
     return `Deleted ${path}`;
   },

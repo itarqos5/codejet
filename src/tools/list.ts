@@ -1,6 +1,7 @@
 import { readdir, stat } from "node:fs/promises";
 import { join } from "node:path";
 import type { ToolDefinition } from "../api/tools.js";
+import { resolveToolPath } from "./path.js";
 
 export const listTool: ToolDefinition = {
   name: "list",
@@ -15,7 +16,7 @@ export const listTool: ToolDefinition = {
     },
   },
   async execute(args, context) {
-    const target = (args.path as string) ?? context.directory ?? process.cwd();
+    const target = resolveToolPath(args.path, context, ".");
     const entries = await readdir(target, { withFileTypes: true });
     const rows = await Promise.all(
       entries.map(async (entry) => {

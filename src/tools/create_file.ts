@@ -1,5 +1,7 @@
-import { writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
+import { dirname } from "node:path";
 import type { ToolDefinition } from "../api/tools.js";
+import { resolveToolPath } from "./path.js";
 
 export const createFileTool: ToolDefinition = {
   name: "create_file",
@@ -11,8 +13,9 @@ export const createFileTool: ToolDefinition = {
     },
     required: ["path"],
   },
-  async execute(args) {
-    const path = args.path as string;
+  async execute(args, context) {
+    const path = resolveToolPath(args.path, context);
+    await mkdir(dirname(path), { recursive: true });
     await writeFile(path, "", { flag: "wx" });
     return `Created ${path}`;
   },
