@@ -27,3 +27,11 @@ export function leaveAlternateScreen(
   stream.write(LEAVE_ALTERNATE_SCREEN);
   active = false;
 }
+
+/** Clear the alternate buffer before Ink computes a frame after resize. */
+export function refreshAlternateScreen(
+  stream: NodeJS.WriteStream = process.stdout,
+): void {
+  if (!active || !supportsAlternateScreen(stream)) return;
+  stream.write("\x1b[2J\x1b[H");
+}

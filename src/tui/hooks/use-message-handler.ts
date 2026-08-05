@@ -1,4 +1,5 @@
 import { useCallback, useRef } from "react";
+import { existsSync } from "node:fs";
 import { getModelById, getModelProvider } from "../models.js";
 import { loadKeys } from "../../api/keys.js";
 import { logger } from "../../api/logger.js";
@@ -128,23 +129,50 @@ export function useMessageHandler({
   /**
    * Per-turn reasoning tracker. Reasoning (a reasoning stream or the think()
    * tool) is shown live in the Thinking indicator only; when the turn ends a
-   * single collapsed "Thought for Ns" entry is written to the transcript. The
-   * thought text itself never becomes a chat message.
+   * single collapsed "Thought for Ns" entry is written to the transcript,
+   * carrying the thought text so it can be expanded on demand (ctrl+t).
    */
-  const thinkingRef = useRef<{ seen: boolean; since: number; endedAt: number | null }>({
+  const thinkingRef = useRef<{ seen: boolean; since: number; endedAt: number | null; text: string }>({
     seen: false,
     since: 0,
     endedAt: null,
+    text: "",
   });
 
-  const markThinking = useCallback(() => {
+  const markThinking = useCallback((text?: string) => {
     thinkingRef.current.seen = true;
+    if (text) thinkingRef.current.text += text;
   }, []);
 
   const markThinkingEnded = useCallback(() => {
     if (thinkingRef.current.endedAt === null) {
       thinkingRef.current.endedAt = Date.now();
     }
+  }, []);
+
+  /**
+   * Writes the collapsed thought entry for the current turn, if any reasoning
+   * happened. Called BEFORE the assistant message is appended so the entry
+   * sits above the answer it produced, and once more from the finally block
+   * to cover aborted/error turns.
+   */
+  const flushThinking = useCallback(() => {
+    const t = thinkingRef.current;
+    if (!t.seen) return;
+    const end = t.endedAt ?? Date.now();
+    dispatch({
+      type: "ADD_MESSAGE",
+      message: {
+        id: genId(),
+        role: "thinking",
+        content: "",
+        thinking: t.text.trim() || undefined,
+        thinkingMs: Math.max(0, end - t.since),
+        timestamp: Date.now(),
+      },
+    });
+    thinkingRef.current = { seen: false, since: 0, endedAt: null, text: "" };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const abortStream = useCallback(() => {
@@ -164,7 +192,7 @@ export function useMessageHandler({
       };
       dispatch({ type: "ADD_MESSAGE", message: userMsg });
       dispatch({ type: "SET_STREAMING", streaming: true });
-      thinkingRef.current = { seen: false, since: Date.now(), endedAt: null };
+      thinkingRef.current = { seen: false, since: Date.now(), endedAt: null, text: "" };
 
       const controller = new AbortController();
       abortControllerRef.current = controller;
@@ -226,7 +254,7 @@ export function useMessageHandler({
             },
           });
         }
-        thinkingRef.current = { seen: false, since: 0, endedAt: null };
+        thinkingRef.current = { seen: false, since: 0, endedAt: null, text: "" };
         dispatch({ type: "SET_STREAMING", streaming: false });
       }
     },
@@ -354,20 +382,22 @@ export function useMessageHandler({
       }
 
       default: {
+        const path = typeof args.path === "string" ? args.path : undefined;
+        const existedBefore = path ? existsSync(path) : false;
         const result = await executeTool(
           { id: call.id || genId(), name: toolName, arguments: args },
           { directory: process.cwd(), abort: signal },
         );
-        const path = typeof args.path === "string" ? args.path : undefined;
         const mutation = fileMutationFor(toolName);
         const isError = !!result.isError || /^error:/i.test(result.content);
 
         if (isError) {
           logger.error(toolName, result.content);
         } else if (mutation && path) {
+          const action = toolName === "write" && !existedBefore ? "created" : mutation.action;
           setFileNotifications((prev) => [
             ...prev,
-            { filePath: path, action: mutation.action },
+            { filePath: path, action },
           ]);
           dispatch({
             type: "ADD_MESSAGE",
@@ -376,7 +406,7 @@ export function useMessageHandler({
               role: "file-change",
               content: path,
               filePath: path,
-              fileAction: mutation.action,
+              fileAction: action,
               timestamp: Date.now(),
             },
           });

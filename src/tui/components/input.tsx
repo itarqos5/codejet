@@ -21,8 +21,15 @@ import type { AppMode } from "../state.js";
 const MAX_ROWS = 6;
 
 function stripControl(input: string): string {
+  // Mouse-wheel/selection reporting arrives as ANSI CSI or OSC sequences.
+  // Removing only ESC leaves printable fragments such as "[<...M" in input.
+  const withoutAnsi = input
+    .replace(/\u001b\[[0-?]*[ -/]*[@-~]/g, "")
+    .replace(/\u001b\][^\u0007]*(?:\u0007|\u001b\\)/g, "")
+    // Ink may have already removed ESC while decoding an unknown mouse event.
+    .replace(/\[<\d+;\d+;\d+[mM]/g, "");
   // eslint-disable-next-line no-control-regex
-  return input.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, "");
+  return withoutAnsi.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, "");
 }
 
 function deleteWordLeft(value: string, cursor: number): { value: string; cursor: number } {

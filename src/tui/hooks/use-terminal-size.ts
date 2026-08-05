@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { refreshAlternateScreen } from "../terminal-screen.js";
 
 export interface TerminalSize {
   /** Real reported terminal columns. */
@@ -44,9 +45,11 @@ export function useTerminalSize(debounceMs = 60): TerminalSize {
       if (timer) clearTimeout(timer);
       timer = setTimeout(() => {
         const next = readSize();
-        setSize((prev) =>
-          prev.columns === next.columns && prev.rows === next.rows ? prev : next,
-        );
+        setSize((prev) => {
+          if (prev.columns === next.columns && prev.rows === next.rows) return prev;
+          refreshAlternateScreen();
+          return next;
+        });
       }, debounceMs);
     };
 
