@@ -148,7 +148,7 @@ export function MessageView({ message, width }: { message: ChatMessage; width: n
     case "assistant":
       return <AssistantMessage message={message} width={width} />;
     case "thinking":
-      return <ThoughtBlock content={message.content} width={width} />;
+      return <ThoughtBlock durationMs={message.thinkingMs} width={width} />;
     case "tool":
       return <ToolMessage message={message} width={width} />;
     case "file-change":

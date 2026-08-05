@@ -60,50 +60,34 @@ export function ThinkingIndicator({
 }
 
 /**
- * A completed thought, kept in the transcript.
- *
- * Rendered as a compact dimmed preview: enough to follow the model's reasoning
- * without burying the answer. The preview length is fixed rather than
- * toggleable because finished entries live in the static transcript, which is
- * written to the terminal once and never redrawn.
+ * A completed thinking phase, kept in the transcript as one collapsed line —
+ * "✻ Thought for 3.2s" — and nothing more. Reasoning text itself is only ever
+ * shown in the live indicator while the turn is in flight; finished entries
+ * live in the static transcript, which is written once and never redrawn, so
+ * there is no expandable dropdown to reopen.
  */
 export function ThoughtBlock({
-  content,
+  durationMs,
   width,
-  previewLines = 2,
 }: {
-  content: string;
+  durationMs?: number;
   width: number;
-  previewLines?: number;
 }) {
   const safeWidth = Math.max(20, width);
-  const lines = content
-    .split("\n")
-    .map((l) => l.trim())
-    .filter(Boolean);
 
-  const shown = lines.slice(0, previewLines);
-  const hidden = lines.length - shown.length;
+  const label =
+    durationMs === undefined
+      ? "Thought"
+      : durationMs < 1000
+        ? `Thought for ${Math.round(durationMs)}ms`
+        : `Thought for ${(durationMs / 1000).toFixed(1)}s`;
 
   return (
-    <Box flexDirection="column" width={safeWidth}>
-      <Box flexDirection="row" width={safeWidth}>
-        <Text color={COLOR.thinking}>{GLYPH.thinking} </Text>
-        <Text color={COLOR.thinking}>Thought</Text>
-        {hidden > 0 && (
-          <Text color={COLOR.muted} dimColor>
-            {"  +"}
-            {hidden} more line{hidden === 1 ? "" : "s"}
-          </Text>
-        )}
-      </Box>
-      <Box flexDirection="column" width={safeWidth} paddingLeft={2}>
-        {shown.map((line, i) => (
-          <Text key={i} color={COLOR.muted} dimColor italic wrap="truncate-end">
-            {truncate(line, safeWidth - 3)}
-          </Text>
-        ))}
-      </Box>
+    <Box flexDirection="row" width={safeWidth}>
+      <Text color={COLOR.thinking}>{GLYPH.thinking} </Text>
+      <Text color={COLOR.muted} dimColor wrap="truncate-end">
+        {truncate(label, safeWidth - 3)}
+      </Text>
     </Box>
   );
 }

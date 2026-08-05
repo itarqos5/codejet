@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { useCallback, useRef } from "react";
 import { getModelById, getModelProvider } from "../models.js";
 import { loadKeys } from "../../api/keys.js";
 import { logger } from "../../api/logger.js";
@@ -125,6 +125,28 @@ export function useMessageHandler({
 }: MessageHandlerDeps) {
   const currentModel = getModelById(state.modelId);
 
+  /**
+   * Per-turn reasoning tracker. Reasoning (a reasoning stream or the think()
+   * tool) is shown live in the Thinking indicator only; when the turn ends a
+   * single collapsed "Thought for Ns" entry is written to the transcript. The
+   * thought text itself never becomes a chat message.
+   */
+  const thinkingRef = useRef<{ seen: boolean; since: number; endedAt: number | null }>({
+    seen: false,
+    since: 0,
+    endedAt: null,
+  });
+
+  const markThinking = useCallback(() => {
+    thinkingRef.current.seen = true;
+  }, []);
+
+  const markThinkingEnded = useCallback(() => {
+    if (thinkingRef.current.endedAt === null) {
+      thinkingRef.current.endedAt = Date.now();
+    }
+  }, []);
+
   const abortStream = useCallback(() => {
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
@@ -142,6 +164,7 @@ export function useMessageHandler({
       };
       dispatch({ type: "ADD_MESSAGE", message: userMsg });
       dispatch({ type: "SET_STREAMING", streaming: true });
+      thinkingRef.current = { seen: false, since: Date.now(), endedAt: null };
 
       const controller = new AbortController();
       abortControllerRef.current = controller;
@@ -188,6 +211,22 @@ export function useMessageHandler({
         });
       } finally {
         abortControllerRef.current = null;
+        // Collapse the turn's reasoning into a single transcript line. The
+        // thought text itself was only ever shown in the live indicator.
+        if (thinkingRef.current.seen) {
+          const end = thinkingRef.current.endedAt ?? Date.now();
+          dispatch({
+            type: "ADD_MESSAGE",
+            message: {
+              id: genId(),
+              role: "thinking",
+              content: "",
+              thinkingMs: Math.max(0, end - thinkingRef.current.since),
+              timestamp: Date.now(),
+            },
+          });
+        }
+        thinkingRef.current = { seen: false, since: 0, endedAt: null };
         dispatch({ type: "SET_STREAMING", streaming: false });
       }
     },
@@ -243,23 +282,16 @@ export function useMessageHandler({
     switch (toolName) {
       case "think": {
         const thought = typeof args.thought === "string" ? args.thought : "";
-        const nextStep = typeof args.next_step === "string" ? args.next_step : undefined;
 
-        // Feed the live indicator, then keep the thought in the transcript.
+        // Reasoning feeds the live Thinking indicator only. It is collapsed
+        // into a single "Thought for Ns" line when the turn ends — never
+        // written into the chat as content.
         if (thought) {
+          markThinking();
           dispatch({ type: "SET_THINKING", thinking: true, label: "Thinking" });
           dispatch({
             type: "APPEND_THINKING_TEXT",
             text: thought + "\n",
-          });
-          dispatch({
-            type: "ADD_MESSAGE",
-            message: {
-              id: genId(),
-              role: "thinking",
-              content: nextStep ? `${thought}\n\nNext: ${nextStep}` : thought,
-              timestamp: Date.now(),
-            },
           });
         }
 
@@ -453,11 +485,13 @@ export function useMessageHandler({
           // into the visible answer.
           const reasoning = delta.reasoning ?? delta.reasoning_content;
           if (reasoning) {
+            markThinking();
             dispatch({ type: "APPEND_THINKING_TEXT", text: reasoning });
             dispatch({ type: "SET_THINKING", thinking: true, label: "Thinking" });
           }
 
           if (delta.content) {
+            markThinkingEnded();
             iterationText += delta.content;
             dispatch({
               type: "SET_STREAMING_CONTENT",
@@ -589,6 +623,7 @@ export function useMessageHandler({
     const ocModel = state.modelId.replace("opencode/", "");
 
     dispatch({ type: "SET_THINKING", thinking: true, label: "Thinking" });
+    markThinking();
 
     let sent: Awaited<ReturnType<typeof oc.sendMessage>>;
     try {
@@ -626,6 +661,7 @@ export function useMessageHandler({
     if (signal.aborted) throw new Error("Aborted");
 
     const reply = assistantMsg ? oc.getMessageText(assistantMsg) : "";
+    markThinkingEnded();
     if (!reply.trim()) {
       throw new Error(`OpenCode did not return a response from ${ocModel} within 120 seconds.`);
     }

@@ -29,6 +29,9 @@ export interface ChatMessage {
   /** Reasoning captured for this turn (think() tool or a reasoning stream). */
   thinking?: string;
 
+  /** How long the model spent reasoning before answering, in milliseconds. */
+  thinkingMs?: number;
+
   /** Tool activity */
   toolName?: string;
   toolStatus?: ToolStatus;
