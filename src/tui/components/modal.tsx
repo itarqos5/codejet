@@ -34,6 +34,27 @@ export const COMMANDS: CommandItem[] = [
   { label: "Quit", description: "Exit CodeJet", action: "quit" },
 ];
 
+/**
+ * The command list for the current state.
+ *
+ * Installing an update lives here rather than on a bare Enter press in the
+ * update toast: the prompt stays focused while the toast is visible, so Enter
+ * would both submit the typed message and kick off the install.
+ */
+export function buildCommands(opts: { updateAvailable?: string | null } = {}): CommandItem[] {
+  const commands: CommandItem[] = [];
+
+  if (opts.updateAvailable) {
+    commands.push({
+      label: `Install update v${opts.updateAvailable}`,
+      description: "Download and build the new version",
+      action: "install-update",
+    });
+  }
+
+  return [...commands, ...COMMANDS];
+}
+
 export interface SelectableItem {
   type: "header" | "model";
   label: string;
@@ -133,13 +154,15 @@ export function CommandPalette({
   selectedIndex,
   width,
   maxRows = 8,
+  commands = COMMANDS,
 }: {
   selectedIndex: number;
   width: number;
   maxRows?: number;
+  commands?: CommandItem[];
 }) {
   const inner = Math.max(8, width - 4);
-  const { slice, start } = windowItems(COMMANDS, selectedIndex, maxRows);
+  const { slice, start } = windowItems(commands, selectedIndex, maxRows);
 
   return (
     <PaletteFrame title="Commands" width={width} footer="↑↓ move   ↵ select   esc close">

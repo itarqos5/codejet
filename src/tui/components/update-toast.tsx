@@ -31,7 +31,7 @@ export function UpdateToast({ version, width }: { version: string; width: number
       </Box>
       <Box width={inner}>
         <Text color={COLOR.muted} wrap="truncate-end">
-          ↵ install now   esc dismiss
+          ctrl+p to install   esc dismiss
         </Text>
       </Box>
     </Box>

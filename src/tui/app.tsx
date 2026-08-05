@@ -5,7 +5,7 @@ import { Welcome } from "./components/header.js";
 import { MessageView, LiveMessage, EmptyState, ActiveToolRow } from "./components/chat.js";
 import { PromptInput } from "./components/input.js";
 import { StatusBar } from "./components/statusbar.js";
-import { CommandPalette, ModelPalette } from "./components/modal.js";
+import { CommandPalette, ModelPalette, buildCommands } from "./components/modal.js";
 import { TodoPanel } from "./components/todo.js";
 import { QuestionPrompt } from "./components/question.js";
 import { PlanPrompt } from "./components/plan-prompt.js";
@@ -136,6 +136,25 @@ export default function App() {
             .catch(() => {});
           break;
 
+        case "install-update":
+          dispatch({ type: "SET_UPDATE_PHASE", phase: "installing" });
+          import("../api/updater.js").then((mod) =>
+            mod
+              .installUpdate(state.updateAvailable ?? undefined, ({ task, percent }) => {
+                dispatch({ type: "SET_UPDATE_PROGRESS", task, percent });
+              })
+              .then((ok) => {
+                dispatch({ type: "SET_UPDATE_PHASE", phase: ok ? "done" : "error" });
+                if (!ok) {
+                  dispatch({
+                    type: "SET_UPDATE_ERROR",
+                    error: "Update failed. See the log in ~/.codejet/logs for details.",
+                  });
+                }
+              }),
+          );
+          break;
+
         case "check-update":
           import("../api/updater.js").then((mod) =>
             mod.checkForUpdate().then((info) => {
@@ -153,7 +172,7 @@ export default function App() {
           break;
       }
     },
-    [exit],
+    [exit, state.updateAvailable],
   );
 
   useKeyboard({
@@ -321,7 +340,12 @@ export default function App() {
         {state.pendingPlan && <PlanPrompt width={width} />}
 
         {palette === "command" && (
-          <CommandPalette selectedIndex={paletteIndex} width={width} maxRows={paletteRows - 3} />
+          <CommandPalette
+            selectedIndex={paletteIndex}
+            width={width}
+            maxRows={paletteRows - 3}
+            commands={buildCommands({ updateAvailable: state.updateAvailable })}
+          />
         )}
 
         {palette === "model" && (

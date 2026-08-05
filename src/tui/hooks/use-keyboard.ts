@@ -1,6 +1,6 @@
 import { useInput } from "ink";
 import { getModelProvider } from "../models.js";
-import { buildModelItems, COMMANDS } from "../components/modal.js";
+import { buildModelItems, buildCommands } from "../components/modal.js";
 import { logSessionErrors, type SessionError } from "../../api/logger.js";
 import type { AppState } from "../state.js";
 
@@ -73,31 +73,13 @@ export function useKeyboard({
 
     if (state.updatePhase === "installing") return;
 
-    if (state.updateAvailable && state.updatePhase === "idle") {
-      if (key.return) {
-        dispatch({ type: "SET_UPDATE_PHASE", phase: "installing" });
-        import("../../api/updater.js").then((mod) => {
-          mod
-            .installUpdate(state.updateAvailable ?? undefined, ({ task, percent }) => {
-              dispatch({ type: "SET_UPDATE_PROGRESS", task, percent });
-            })
-            .then((ok) => {
-              dispatch({ type: "SET_UPDATE_PHASE", phase: ok ? "done" : "error" });
-              if (!ok) {
-                dispatch({
-                  type: "SET_UPDATE_ERROR",
-                  error: "Update failed. See the log in ~/.codejet/logs for details.",
-                });
-              }
-            });
-        });
-        return;
-      }
-      if (key.escape) {
-        dispatch({ type: "SET_UPDATE_AVAILABLE", version: null });
-        return;
-      }
-      // Any other key falls through so the toast does not block typing.
+    // The update notice is informational and never consumes Enter: the prompt
+    // stays focused while it is shown, so binding Enter here would submit the
+    // typed message and start an install from a single keypress. Installing is
+    // a command palette entry instead.
+    if (state.updateAvailable && state.updatePhase === "idle" && key.escape && !state.streaming) {
+      dispatch({ type: "SET_UPDATE_AVAILABLE", version: null });
+      return;
     }
 
     // ── Plan confirmation ───────────────────────────────────
@@ -151,14 +133,15 @@ export function useKeyboard({
     }
 
     if (palette === "command") {
+      const commands = buildCommands({ updateAvailable: state.updateAvailable });
       if (key.escape) {
         setPalette("none");
       } else if (key.upArrow) {
         setPaletteIndex((prev) => Math.max(0, prev - 1));
       } else if (key.downArrow) {
-        setPaletteIndex((prev) => Math.min(COMMANDS.length - 1, prev + 1));
+        setPaletteIndex((prev) => Math.min(commands.length - 1, prev + 1));
       } else if (key.return) {
-        const action = COMMANDS[Math.min(paletteIndex, COMMANDS.length - 1)].action;
+        const action = commands[Math.min(paletteIndex, commands.length - 1)].action;
         // "model" swaps to the model palette, so it must stay open.
         if (action !== "model") setPalette("none");
         handleCommandAction(action);
