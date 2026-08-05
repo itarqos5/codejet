@@ -84,7 +84,9 @@ export function FileChangeView({
   return (
     <Box flexDirection="column" width={width}>
       <Row
-        glyph={edit.action === "deleted" ? GLYPH.toolFail : GLYPH.toolDone}
+        // A deletion is a successful action, so it must not reuse the error
+        // glyph — that read as "the tool failed".
+        glyph={edit.action === "deleted" ? GLYPH.removed : GLYPH.toolDone}
         glyphColor={color}
         label={`${ACTION_LABEL[edit.action]}  ${edit.path}`}
         labelColor={COLOR.text}
