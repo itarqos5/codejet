@@ -71,6 +71,35 @@ export interface Tool {
   };
 }
 
+/**
+ * A tool call as it arrives inside a stream: every field is optional because the
+ * provider sends it in fragments. `index` identifies which call a fragment
+ * belongs to, and `function.arguments` accumulates across chunks — a single
+ * fragment is usually not valid JSON on its own.
+ */
+export interface ToolCallDelta {
+  index?: number;
+  id?: string;
+  type?: "function";
+  function?: {
+    name?: string;
+    arguments?: string;
+  };
+}
+
+/**
+ * Streamed delta. Reasoning-capable models emit chain-of-thought on a channel
+ * separate from `content`; providers disagree on the field name, so both known
+ * spellings are accepted.
+ */
+export interface ChunkDelta {
+  role?: ChatMessage["role"];
+  content?: string | null;
+  reasoning?: string | null;
+  reasoning_content?: string | null;
+  tool_calls?: ToolCallDelta[];
+}
+
 export interface ChatCompletionResponse {
   id: string;
   object: string;
@@ -95,7 +124,7 @@ export interface ChatCompletionChunk {
   model: string;
   choices: {
     index: number;
-    delta: Partial<ChatMessage> & { tool_calls?: ToolCall[] };
+    delta: ChunkDelta;
     finish_reason: string | null;
   }[];
   usage?: {

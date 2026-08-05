@@ -25,6 +25,19 @@ interface LogEntry {
 const logBuffer: LogEntry[] = [];
 const MAX_BUFFER_SIZE = 100;
 
+// While the TUI owns the terminal, nothing may be written to stdout/stderr:
+// stray writes are interleaved into ink's live frame and corrupt the layout.
+// Logs are buffered and flushed to disk instead.
+let tuiActive = false;
+
+export function setTuiActive(active: boolean): void {
+  tuiActive = active;
+}
+
+export function isTuiActive(): boolean {
+  return tuiActive;
+}
+
 function ensureLogDir(): void {
   if (!existsSync(LOG_DIR)) {
     mkdirSync(LOG_DIR, { recursive: true });
@@ -57,7 +70,10 @@ export function log(
     logBuffer.shift();
   }
 
-  // Console output with colors
+  // Never touch stdout while the TUI is live — the log is on disk instead.
+  if (tuiActive) return;
+
+  // Console output with colors (only before/after the TUI runs, e.g. CLI usage)
   const ts = new Date().toISOString().slice(11, 19); // HH:MM:SS
   const levelColors: Record<LogLevel, string> = {
     debug: "\x1b[90m",
@@ -67,10 +83,10 @@ export function log(
   };
   const color = levelColors[level];
   const reset = "\x1b[0m";
-  
+
   const prefix = `${color}[${ts}] [${source.toUpperCase()}]${reset}`;
   console.log(`${prefix} ${message}`);
-  
+
   if (details && level === "error") {
     console.error(`${prefix} Details:`, details);
   }
@@ -128,8 +144,15 @@ export function flushLogs(): void {
     const details = entry.details ? `\n  Details: ${JSON.stringify(entry.details)}` : "";
     return `[${ts}] [${entry.level.toUpperCase()}] [${entry.source}] ${entry.message}${details}`;
   });
-  
-  appendFileSync(logFile, lines.join("\n") + "\n", "utf-8");
+
+  try {
+    appendFileSync(logFile, lines.join("\n") + "\n", "utf-8");
+  } catch {
+    // Never let logging failures take down the app or print to the terminal.
+  }
+
+  // Drain so repeated flushes (exit handler + explicit calls) don't duplicate.
+  logBuffer.length = 0;
 }
 
 // Cleanup on exit

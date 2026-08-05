@@ -1,205 +1,209 @@
-import { useState, useCallback } from "react";
 import { useInput } from "ink";
-import { getModelById, getModelProvider } from "../models.js";
-import type { AppState } from "../state.js";
-import { buildModelItems } from "../components/modal.js";
+import { getModelProvider } from "../models.js";
+import { buildModelItems, COMMANDS } from "../components/modal.js";
 import { logSessionErrors, type SessionError } from "../../api/logger.js";
+import type { AppState } from "../state.js";
 
-type ModalMode = "none" | "command" | "model";
+export type PaletteMode = "none" | "command" | "model";
 
 interface KeyboardDeps {
   state: AppState;
   dispatch: React.Dispatch<any>;
-  modalMode: ModalMode;
-  setModalMode: (mode: ModalMode | ((prev: ModalMode) => ModalMode)) => void;
-  modalIndex: number;
-  setModalIndex: (index: number | ((prev: number) => number)) => void;
+  palette: PaletteMode;
+  setPalette: (mode: PaletteMode | ((prev: PaletteMode) => PaletteMode)) => void;
+  paletteIndex: number;
+  setPaletteIndex: (index: number | ((prev: number) => number)) => void;
+  questionIndex: number;
+  setQuestionIndex: (index: number | ((prev: number) => number)) => void;
   sessionErrors: React.MutableRefObject<SessionError[]>;
   exit: () => void;
   handleCommandAction: (action: string) => void;
   abortStream: () => void;
 }
 
+/**
+ * Global key handling.
+ *
+ * Precedence is explicit and every branch returns, so a key is consumed in
+ * exactly one place. The prompt owns text editing and is disabled whenever an
+ * overlay is up, which is why arrow keys can be reused here without clashing.
+ */
 export function useKeyboard({
   state,
   dispatch,
-  modalMode,
-  setModalMode,
-  modalIndex,
-  setModalIndex,
+  palette,
+  setPalette,
+  paletteIndex,
+  setPaletteIndex,
+  questionIndex,
+  setQuestionIndex,
   sessionErrors,
   exit,
   handleCommandAction,
   abortStream,
 }: KeyboardDeps) {
   useInput((input, key) => {
-    // Ctrl+C - log errors, clear terminal, exit
+    // ── Quit ────────────────────────────────────────────────
     if (key.ctrl && input === "c") {
       logSessionErrors(sessionErrors.current);
-      import("../../api/opencode-server.js").then((mod) => mod.stopServer()).catch(() => {});
-      process.stdout.write("\x1B[0m"); // Reset colors
-      process.stdout.write("\x1B[2J\x1B[0f"); // Clear
+      import("../../api/opencode-server.js")
+        .then((mod) => mod.stopServer())
+        .catch(() => {});
+      // Deliberately no screen clear: wiping the terminal on exit also wipes
+      // the transcript the user may still want to read or copy.
       exit();
       return;
     }
 
-    // Plan prompt - Enter to proceed, Esc to dismiss
-    if (state.pendingPlan) {
+    // ── Update prompts ──────────────────────────────────────
+    if (state.updatePhase === "done") {
       if (key.return) {
-        state.pendingPlan.resolve(true);
-        dispatch({ type: "SET_PENDING_PLAN", plan: null });
-        return;
-      }
-      if (key.escape) {
-        state.pendingPlan.resolve(false);
-        dispatch({ type: "SET_PENDING_PLAN", plan: null });
-        return;
+        import("../../api/updater.js").then((mod) => mod.restartApp());
       }
       return;
     }
 
-    // Update flow - Enter to install, Esc to dismiss
+    if (state.updatePhase === "error") {
+      if (key.escape || key.return) {
+        dispatch({ type: "SET_UPDATE_PHASE", phase: "idle" });
+        dispatch({ type: "SET_UPDATE_AVAILABLE", version: null });
+      }
+      return;
+    }
+
+    if (state.updatePhase === "installing") return;
+
     if (state.updateAvailable && state.updatePhase === "idle") {
       if (key.return) {
         dispatch({ type: "SET_UPDATE_PHASE", phase: "installing" });
         import("../../api/updater.js").then((mod) => {
-          mod.installUpdate(state.updateAvailable ?? undefined, ({ task, percent }) => {
-            dispatch({ type: "SET_UPDATE_PROGRESS", task, percent });
-          }).then((ok) => {
-            dispatch({ type: "SET_UPDATE_PHASE", phase: ok ? "done" : "error" });
-            if (!ok) {
-              dispatch({ type: "SET_UPDATE_ERROR", error: "Update failed. Check logs for details." });
-            }
-          });
+          mod
+            .installUpdate(state.updateAvailable ?? undefined, ({ task, percent }) => {
+              dispatch({ type: "SET_UPDATE_PROGRESS", task, percent });
+            })
+            .then((ok) => {
+              dispatch({ type: "SET_UPDATE_PHASE", phase: ok ? "done" : "error" });
+              if (!ok) {
+                dispatch({
+                  type: "SET_UPDATE_ERROR",
+                  error: "Update failed. See the log in ~/.codejet/logs for details.",
+                });
+              }
+            });
         });
         return;
       }
-      if (key.escape || input.toLowerCase() === "x") {
+      if (key.escape) {
         dispatch({ type: "SET_UPDATE_AVAILABLE", version: null });
-        dispatch({ type: "SET_UPDATE_PHASE", phase: "idle" });
         return;
       }
+      // Any other key falls through so the toast does not block typing.
     }
-    if (state.updatePhase === "done") {
+
+    // ── Plan confirmation ───────────────────────────────────
+    if (state.pendingPlan) {
       if (key.return) {
-        import("../../api/updater.js").then((mod) => mod.restartApp());
-        return;
+        state.pendingPlan.resolve(true);
+        dispatch({ type: "SET_PENDING_PLAN", plan: null });
+      } else if (key.escape) {
+        state.pendingPlan.resolve(false);
+        dispatch({ type: "SET_PENDING_PLAN", plan: null });
       }
-    }
-    if (state.updatePhase === "error") {
-      if (key.escape) {
-        dispatch({ type: "SET_UPDATE_PHASE", phase: "idle" });
-        dispatch({ type: "SET_UPDATE_AVAILABLE", version: null });
-        return;
-      }
-    }
-
-    // Ctrl+P - toggle command palette
-    if (key.ctrl && input === "p") {
-      if (state.pendingQuestion) return;
-      setModalMode((prev) => (prev === "command" ? "none" : "command"));
-      setModalIndex(0);
       return;
     }
 
-    // Question prompt navigation (when pending question exists)
+    // ── Question with fixed options ─────────────────────────
     if (state.pendingQuestion) {
-      const options = state.pendingQuestion.options || [];
-      if (key.upArrow && options.length > 0) {
-        // Move selection up
-        dispatch({
-          type: "SET_PENDING_QUESTION",
-          question: { ...state.pendingQuestion },
-        });
-        // Handled in QuestionPrompt component via local state
-        return;
-      }
-      if (key.downArrow && options.length > 0) {
-        // Move selection down
-        return;
-      }
-      if (key.escape) {
-        // Cancel question - send empty answer
-        state.pendingQuestion.resolve("");
+      const options = state.pendingQuestion.options ?? [];
+      if (options.length === 0) return; // free text: the prompt handles it
+
+      if (key.upArrow) {
+        setQuestionIndex((prev) => Math.max(0, prev - 1));
+      } else if (key.downArrow) {
+        setQuestionIndex((prev) => Math.min(options.length - 1, prev + 1));
+      } else if (key.return) {
+        const answer = options[Math.min(questionIndex, options.length - 1)];
+        state.pendingQuestion.resolve(answer);
         dispatch({ type: "SET_PENDING_QUESTION", question: null });
-        return;
+        setQuestionIndex(0);
+      } else if (/^[1-9]$/.test(input)) {
+        const idx = Number(input) - 1;
+        if (idx < options.length) {
+          state.pendingQuestion.resolve(options[idx]);
+          dispatch({ type: "SET_PENDING_QUESTION", question: null });
+          setQuestionIndex(0);
+        }
       }
       return;
     }
 
-    // Escape - close modals or abort streaming (two-step cancel)
-    if (key.escape) {
-      if (modalMode !== "none") {
-        setModalMode("none");
-        return;
+    // ── Command palette ─────────────────────────────────────
+    if (key.ctrl && input === "p") {
+      setPalette((prev) => (prev === "none" ? "command" : "none"));
+      setPaletteIndex(0);
+      return;
+    }
+
+    if (palette === "command") {
+      if (key.escape) {
+        setPalette("none");
+      } else if (key.upArrow) {
+        setPaletteIndex((prev) => Math.max(0, prev - 1));
+      } else if (key.downArrow) {
+        setPaletteIndex((prev) => Math.min(COMMANDS.length - 1, prev + 1));
+      } else if (key.return) {
+        const action = COMMANDS[Math.min(paletteIndex, COMMANDS.length - 1)].action;
+        // "model" swaps to the model palette, so it must stay open.
+        if (action !== "model") setPalette("none");
+        handleCommandAction(action);
       }
+      return;
+    }
+
+    if (palette === "model") {
+      const selectable = buildModelItems().filter((i) => i.type === "model");
+      if (key.escape) {
+        setPalette("none");
+      } else if (key.upArrow) {
+        setPaletteIndex((prev) => Math.max(0, prev - 1));
+      } else if (key.downArrow) {
+        setPaletteIndex((prev) => Math.min(selectable.length - 1, prev + 1));
+      } else if (key.return) {
+        const chosen = selectable[Math.min(paletteIndex, selectable.length - 1)]?.model;
+        if (chosen) {
+          dispatch({
+            type: "SET_MODEL",
+            modelId: chosen.id,
+            provider: getModelProvider(chosen.id),
+          });
+          dispatch({ type: "SET_CONTEXT_TOKENS", used: 0, max: chosen.maxContext });
+        }
+        setPalette("none");
+      }
+      return;
+    }
+
+    // ── Interrupt a running turn (two-step) ─────────────────
+    if (key.escape) {
       if (state.streaming) {
         if (state.cancelPending) {
-          // Second ESC - actually cancel
           abortStream();
-          dispatch({ type: "SET_STREAMING_CONTENT", content: "" });
           dispatch({ type: "SET_CANCEL_PENDING", pending: false });
         } else {
-          // First ESC - show confirmation
           dispatch({ type: "SET_CANCEL_PENDING", pending: true });
-          // Auto-reset after 3 seconds
-          setTimeout(() => {
-            dispatch({ type: "SET_CANCEL_PENDING", pending: false });
-          }, 3000);
         }
-        return;
       }
       return;
     }
 
-    // Any other key while cancel pending resets it
-    if (state.cancelPending && state.streaming) {
+    // Any other key clears a half-armed cancel.
+    if (state.cancelPending) {
       dispatch({ type: "SET_CANCEL_PENDING", pending: false });
     }
 
-    // Tab - toggle mode
-    if (key.tab && modalMode === "none" && !state.pendingQuestion) {
-      dispatch({
-        type: "SET_MODE",
-        mode: state.mode === "build" ? "plan" : "build",
-      });
-      return;
-    }
-
-    // Command modal navigation
-    if (modalMode === "command") {
-      if (key.upArrow) {
-        setModalIndex((prev) => Math.max(0, prev - 1));
-      } else if (key.downArrow) {
-        setModalIndex((prev) => Math.min(5, prev + 1));
-      } else if (key.return) {
-        const action = ["new", "model", "compact", "todos", "clear", "check-update"][modalIndex];
-        handleCommandAction(action);
-        if (action !== "model") {
-          setModalMode("none");
-        }
-      }
-      return;
-    }
-
-    // Model selector navigation
-    if (modalMode === "model") {
-      const items = buildModelItems();
-      const selectableIndices = items.map((_it, i) => i).filter((i) => items[i].type === "model");
-      if (key.upArrow) {
-        setModalIndex((prev) => Math.max(0, prev - 1));
-      } else if (key.downArrow) {
-        setModalIndex((prev) => Math.min(selectableIndices.length - 1, prev + 1));
-      } else if (key.return) {
-        const selectedItemIdx = selectableIndices[modalIndex];
-        const selected = items[selectedItemIdx];
-        if (selected?.model) {
-          const provider = getModelProvider(selected.model.id);
-          dispatch({ type: "SET_MODEL", modelId: selected.model.id, provider });
-          dispatch({ type: "SET_CONTEXT_TOKENS", used: 0, max: selected.model.maxContext });
-        }
-        setModalMode("none");
-      }
+    // ── Mode toggle ─────────────────────────────────────────
+    if (key.tab) {
+      dispatch({ type: "SET_MODE", mode: state.mode === "build" ? "plan" : "build" });
       return;
     }
   });

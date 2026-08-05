@@ -1,297 +1,245 @@
-import React, { useState, useEffect, useRef } from "react";
-import { Box, Text, useInput } from "ink";
+import React from "react";
+import { Box, Text } from "ink";
 import { MarkdownText } from "./markdown.js";
-import type { ChatMessage, FileChange } from "../state.js";
+import { ThoughtBlock } from "./thinking.js";
+import { Spinner } from "./spinner.js";
+import { COLOR, GLYPH, truncate } from "../theme.js";
+import type { ChatMessage } from "../state.js";
 
-function ToolCallDisplay({ message }: { message: ChatMessage }) {
+/**
+ * Transcript rendering.
+ *
+ * The layout is deliberately flat: a one-cell marker column and a content
+ * column, no borders around messages. Boxing every message meant every turn
+ * added four border rows and a hard width, and any width miscalculation drew a
+ * border straight through the text. A gutter cannot collide with anything.
+ */
+
+const INDENT = 2;
+
+function Gutter({ glyph, color }: { glyph: string; color: string }) {
   return (
-    <Box gap={1} paddingX={1}>
-      <Text color="magenta" bold>⚡</Text>
-      <Text color="magenta">
-        Calling <Text bold color="white">{message.content}</Text>
+    <Box width={INDENT} flexShrink={0}>
+      <Text color={color} bold>
+        {glyph}
       </Text>
     </Box>
   );
 }
 
-function ToolResultDisplay({ message }: { message: ChatMessage }) {
-  const columns = process.stdout.columns ?? 80;
-  const maxPreviewWidth = Math.min(60, columns - 20);
-  
-  const truncateContent = (text: string, maxLen: number): string => {
-    if (text.length <= maxLen) return text;
-    return text.slice(0, maxLen - 3) + "...";
-  };
-  
-  const preview = truncateContent(message.content, maxPreviewWidth);
-  const isTruncated = message.content.length > maxPreviewWidth;
-  
+function UserMessage({ message, width }: { message: ChatMessage; width: number }) {
+  const contentWidth = Math.max(12, width - INDENT);
   return (
-    <Box flexDirection="column" paddingLeft={2} gap={0}>
-      <Text color="gray" dimColor>──┤ Result ├────────────────</Text>
-      <Box flexDirection="column" paddingX={1}>
-        <Text color="cyan">{preview}</Text>
-        {isTruncated && (
-          <Text color="gray" dimColor>
-            ({(message.content.length - maxPreviewWidth + 3)} more chars hidden)
-          </Text>
-        )}
+    <Box flexDirection="row" width={width}>
+      <Gutter glyph={GLYPH.user} color={COLOR.user} />
+      <Box flexDirection="column" width={contentWidth}>
+        <Text color={COLOR.text} wrap="wrap">
+          {message.content}
+        </Text>
       </Box>
     </Box>
   );
 }
 
-function FileChangeDisplay({ message }: { message: ChatMessage }) {
-  const icon = message.fileAction === "created" ? "◎" : message.fileAction === "deleted" ? "✕" : "◉";
-  const color = message.fileAction === "created" ? "green" : message.fileAction === "deleted" ? "red" : "yellow";
+function AssistantMessage({ message, width }: { message: ChatMessage; width: number }) {
+  const contentWidth = Math.max(12, width - INDENT);
   return (
-    <Box gap={1} paddingX={1}>
-      <Text color={color} bold>{icon}</Text>
-      <Text color={color}>
-        {message.fileAction}{" "}
-        <Text bold color="white">{message.filePath}</Text>
-      </Text>
-    </Box>
-  );
-}
+    <Box flexDirection="column" width={width}>
+      <Box flexDirection="row">
+        <Text color={COLOR.assistant}>{GLYPH.assistant} </Text>
+        <Text color={COLOR.assistant} bold>
+          {message.modelName ?? "assistant"}
+        </Text>
+      </Box>
 
-function UserMessage({ message }: { message: ChatMessage }) {
-  const columns = process.stdout.columns ?? 80;
-  const maxWidth = Math.min(columns - 8, 76);
-  const contentWidth = Math.max(20, maxWidth - 4);
-  
-  return (
-    <Box flexDirection="column" borderStyle="round" borderColor="blue" paddingX={1} paddingY={0} marginBottom={1}>
-      <Box gap={1}>
-        <Text color="blue" bold>▸</Text>
-        <Text color="blue" bold>User</Text>
-      </Box>
-      <Box paddingLeft={2} width={contentWidth}>
-        <MarkdownText content={message.content} maxWidth={contentWidth} />
-      </Box>
-    </Box>
-  );
-}
+      <Box flexDirection="row" width={width}>
+        <Box width={INDENT} flexShrink={0} />
+        <Box flexDirection="column" width={contentWidth}>
+          <MarkdownText content={message.content} width={contentWidth} />
 
-function AssistantMessage({ message }: { message: ChatMessage }) {
-  const columns = process.stdout.columns ?? 80;
-  const maxWidth = Math.min(columns - 8, 76);
-  const contentWidth = Math.max(20, maxWidth - 4);
-  
-  return (
-    <Box flexDirection="column" borderStyle="round" borderColor="cyan" paddingX={1} paddingY={0} marginBottom={1}>
-      <Box gap={1}>
-        <Text color="cyan" bold>◈</Text>
-        <Text color="cyan" bold>{message.modelName ?? "assistant"}</Text>
-      </Box>
-      <Box paddingLeft={2} width={contentWidth}>
-        <MarkdownText content={message.content} maxWidth={contentWidth} />
-      </Box>
-      {message.fileChanges && message.fileChanges.length > 0 && (
-        <Box flexDirection="column" paddingTop={1} paddingLeft={2}>
-          {message.fileChanges.map((fc, i) => (
-            <Box key={i} gap={1}>
-              {fc.added > 0 && <Text color="green">+{fc.added}</Text>}
-              {fc.removed > 0 && <Text color="red">-{fc.removed}</Text>}
-              <Text color="gray">{fc.path}</Text>
+          {message.fileChanges && message.fileChanges.length > 0 && (
+            <Box flexDirection="column" width={contentWidth}>
+              {message.fileChanges.map((fc, i) => (
+                <Text key={i} wrap="truncate-end">
+                  <Text color={COLOR.success}>
+                    {GLYPH.added}
+                    {fc.added}
+                  </Text>
+                  <Text color={COLOR.error}>
+                    {" "}
+                    {GLYPH.removed}
+                    {fc.removed}
+                  </Text>
+                  <Text color={COLOR.textDim}> {truncate(fc.path, contentWidth - 12)}</Text>
+                </Text>
+              ))}
             </Box>
-          ))}
+          )}
         </Box>
-      )}
-      {message.toolCalls && message.toolCalls.length > 0 && (
-        <Box flexDirection="column" paddingTop={1} paddingLeft={2}>
-          {message.toolCalls.map((tool, i) => (
-            <Text key={i} color="gray" dimColor>⚡ {tool}</Text>
-          ))}
-        </Box>
-      )}
+      </Box>
     </Box>
   );
 }
 
-function SystemMessage({ message }: { message: ChatMessage }) {
+function ToolMessage({ message, width }: { message: ChatMessage; width: number }) {
+  const status = message.toolStatus ?? "done";
+  const glyph =
+    status === "running" ? null : status === "error" ? GLYPH.toolFail : GLYPH.toolDone;
+  const color =
+    status === "error" ? COLOR.error : status === "running" ? COLOR.tool : COLOR.success;
+
+  const detail = message.toolDetail ?? message.content;
+  const nameWidth = (message.toolName ?? "tool").length;
+  const detailWidth = Math.max(0, width - INDENT - nameWidth - 2);
+
   return (
-    <Box paddingLeft={2} paddingY={0}>
-      <Text color="gray" dimColor italic>
-        ℹ {message.content}
+    <Box flexDirection="row" width={width}>
+      <Box width={INDENT} flexShrink={0}>
+        {glyph ? <Text color={color}>{glyph}</Text> : <Spinner color={COLOR.tool} />}
+      </Box>
+      <Text wrap="truncate-end">
+        <Text color={color}>{message.toolName ?? "tool"}</Text>
+        {detail ? <Text color={COLOR.textDim}> {truncate(detail, detailWidth)}</Text> : null}
       </Text>
     </Box>
   );
 }
 
-function StreamingMessage({ content, model }: { content: string; model: string }) {
-  const columns = process.stdout.columns ?? 80;
-  const maxWidth = Math.min(columns - 8, 76);
-  const contentWidth = Math.max(20, maxWidth - 4);
-  
-  if (!content) return null;
+function FileChangeMessage({ message, width }: { message: ChatMessage; width: number }) {
+  const action = message.fileAction ?? "modified";
+  const color =
+    action === "created" ? COLOR.success : action === "deleted" ? COLOR.error : COLOR.warning;
+  const label = action.charAt(0).toUpperCase() + action.slice(1);
+
   return (
-    <Box flexDirection="column" borderStyle="round" borderColor="#00ff88" paddingX={1} paddingY={0} marginBottom={1}>
-      <Box gap={1}>
-        <Text color="#00ff88" bold>◉</Text>
-        <Text color="#00ff88" bold>{model}</Text>
-        <Text color="gray" dimColor>streaming...</Text>
-      </Box>
-      <Box paddingLeft={2} width={contentWidth}>
-        <MarkdownText content={content} maxWidth={contentWidth} />
-      </Box>
-      {/* Animated cursor */}
-      <Box>
-        <Text color="#00ff88" bold>▋</Text>
+    <Box flexDirection="row" width={width}>
+      <Gutter glyph={GLYPH.toolDone} color={color} />
+      <Text wrap="truncate-end">
+        <Text color={color}>{label}</Text>
+        <Text color={COLOR.textDim}>
+          {" "}
+          {truncate(message.filePath ?? message.content, width - INDENT - label.length - 2)}
+        </Text>
+      </Text>
+    </Box>
+  );
+}
+
+function SystemMessage({ message, width }: { message: ChatMessage; width: number }) {
+  const isError = /^error/i.test(message.content);
+  const contentWidth = Math.max(12, width - INDENT);
+  return (
+    <Box flexDirection="row" width={width}>
+      <Gutter glyph={isError ? GLYPH.toolFail : GLYPH.system} color={isError ? COLOR.error : COLOR.muted} />
+      <Box width={contentWidth}>
+        <Text color={isError ? COLOR.error : COLOR.muted} wrap="wrap" dimColor={!isError}>
+          {message.content}
+        </Text>
       </Box>
     </Box>
   );
 }
 
-function renderMessage(msg: ChatMessage) {
-  switch (msg.role) {
+/** Renders one transcript entry. Every branch is width-bounded. */
+export function MessageView({ message, width }: { message: ChatMessage; width: number }) {
+  switch (message.role) {
     case "user":
-      return <UserMessage key={msg.id} message={msg} />;
+      return <UserMessage message={message} width={width} />;
     case "assistant":
-      return <AssistantMessage key={msg.id} message={msg} />;
-    case "system":
-      return <SystemMessage key={msg.id} message={msg} />;
-    case "tool-call":
-      return <ToolCallDisplay key={msg.id} message={msg} />;
-    case "tool-result":
-      return <ToolResultDisplay key={msg.id} message={msg} />;
+      return <AssistantMessage message={message} width={width} />;
+    case "thinking":
+      return <ThoughtBlock content={message.content} width={width} />;
+    case "tool":
+      return <ToolMessage message={message} width={width} />;
     case "file-change":
-      return <FileChangeDisplay key={msg.id} message={msg} />;
+      return <FileChangeMessage message={message} width={width} />;
+    case "system":
+      return <SystemMessage message={message} width={width} />;
     default:
       return null;
   }
 }
 
-export function ChatArea({
-  messages,
-  streaming,
-  streamingContent,
+/**
+ * Returns the last `maxLines` lines of streamed markdown, reopening a code
+ * fence if the cut landed inside one.
+ *
+ * The live region must never be taller than the space reserved for it: an ink
+ * frame taller than the terminal cannot be diffed correctly and tears. Once a
+ * turn completes the full text moves into the static transcript, so nothing is
+ * lost by clipping here.
+ */
+export function tailLines(content: string, maxLines: number): { text: string; clipped: boolean } {
+  if (maxLines <= 0) return { text: "", clipped: content.length > 0 };
+
+  const lines = content.split("\n");
+  if (lines.length <= maxLines) return { text: content, clipped: false };
+
+  const kept = lines.slice(lines.length - maxLines);
+
+  // Count fences in the dropped part; an odd count means we cut inside a block.
+  const dropped = lines.slice(0, lines.length - maxLines);
+  const fenceCount = dropped.filter((l) => /^\s*```/.test(l)).length;
+  const text = fenceCount % 2 === 1 ? "```\n" + kept.join("\n") : kept.join("\n");
+
+  return { text, clipped: true };
+}
+
+/**
+ * The in-progress assistant turn. Lives in the live frame (not the static
+ * transcript) and is clipped to `maxLines`.
+ */
+export function LiveMessage({
+  content,
   modelName,
-  maxHeight,
+  width,
+  maxLines,
 }: {
-  messages: ChatMessage[];
-  streaming: boolean;
-  streamingContent: string;
+  content: string;
   modelName: string;
-  maxHeight: number;
+  width: number;
+  maxLines: number;
 }) {
-  const [scrollOffset, setScrollOffset] = useState(0);
-  const [isScrolling, setIsScrolling] = useState(false);
-  const scrollTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  if (!content.trim()) return null;
 
-  useEffect(() => {
-    if (!isScrolling) {
-      setScrollOffset(0);
-    }
-  }, [messages.length, streamingContent, isScrolling]);
-
-  // Auto-scroll to bottom when new messages arrive (unless user is scrolling)
-  useEffect(() => {
-    if (!isScrolling && messages.length > 0) {
-      setScrollOffset(0);
-    }
-  }, [messages.length, streamingContent]);
-
-  useInput((input, key) => {
-    // Enable scroll mode with Shift+Up/Down
-    if (key.upArrow && input === "") {
-      setIsScrolling(true);
-      setScrollOffset((prev) => {
-        const maxOffset = Math.max(0, messages.length - maxHeight + (streaming ? 1 : 0));
-        return Math.min(prev + 1, maxOffset);
-      });
-      // Exit scroll mode after inactivity
-      if (scrollTimeoutRef.current) clearTimeout(scrollTimeoutRef.current);
-      scrollTimeoutRef.current = setTimeout(() => setIsScrolling(false), 3000);
-    } else if (key.downArrow && input === "") {
-      setIsScrolling(true);
-      setScrollOffset((prev) => Math.max(0, prev - 1));
-      if (scrollTimeoutRef.current) clearTimeout(scrollTimeoutRef.current);
-      scrollTimeoutRef.current = setTimeout(() => setIsScrolling(false), 3000);
-    } else if (key.pageUp) {
-      setIsScrolling(true);
-      setScrollOffset((prev) => {
-        const maxOffset = Math.max(0, messages.length - maxHeight + (streaming ? 1 : 0));
-        return Math.min(prev + maxHeight, maxOffset);
-      });
-    } else if (key.pageDown) {
-      setIsScrolling(true);
-      setScrollOffset((prev) => Math.max(0, prev - maxHeight));
-    }
-  });
-
-  const totalItems = messages.length + (streaming && streamingContent ? 1 : 0);
-  const maxScroll = Math.max(0, totalItems - maxHeight);
-  const effectiveOffset = Math.min(scrollOffset, maxScroll);
-
-  const allItems: ChatMessage[] = [...messages];
-  if (streaming && streamingContent) {
-    allItems.push({
-      id: "__streaming__",
-      role: "assistant",
-      content: streamingContent,
-      timestamp: 0,
-      modelName,
-    });
-  }
-
-  const startIdx = Math.max(0, allItems.length - maxHeight - effectiveOffset);
-  const visibleItems = allItems.slice(startIdx, startIdx + maxHeight);
-
-  // Calculate scroll percentage for progress bar
-  const scrollPercent = maxScroll > 0 ? Math.round((effectiveOffset / maxScroll) * 100) : 0;
-  const scrollBarWidth = 8;
-  const filledBars = Math.round((scrollPercent / 100) * scrollBarWidth);
-  const scrollBar = "▓".repeat(filledBars) + "░".repeat(scrollBarWidth - filledBars);
+  const contentWidth = Math.max(12, width - INDENT);
+  const { text, clipped } = tailLines(content, maxLines);
 
   return (
-    <Box flexDirection="column" overflow="hidden" flexGrow={1}>
-      {maxScroll > 0 && effectiveOffset > 0 && (
-        <Box justifyContent="center" paddingBottom={0}>
-          <Text color="gray" dimColor>
-            ↑ {effectiveOffset} more ↑
-          </Text>
-        </Box>
-      )}
-      
-      {/* Chat messages with scroll bar on the right */}
-      <Box flexDirection="row" flexGrow={1}>
-        <Box flexDirection="column" flexGrow={1} overflow="hidden">
-          {visibleItems.map((msg) => renderMessage(msg))}
-        </Box>
-        
-        {/* Scroll position indicator */}
-        {maxScroll > 0 && (
-          <Box flexDirection="column" justifyContent="center" paddingX={0}>
-            <Text color="cyan" dimColor>{scrollBar}</Text>
-          </Box>
-        )}
+    <Box flexDirection="column" width={width}>
+      <Box flexDirection="row">
+        <Text color={COLOR.assistant}>{GLYPH.assistant} </Text>
+        <Text color={COLOR.assistant} bold>
+          {modelName}
+        </Text>
       </Box>
-      
-      {messages.length === 0 && !streaming && (
-        <Box flexDirection="column" justifyContent="center" flexGrow={1} gap={1}>
-          <Box justifyContent="center">
-            <Text color="cyan" bold>◆</Text>
-            <Text color="gray" dimColor> </Text>
-            <Text color="gray">Ready for your command</Text>
-          </Box>
-          <Box justifyContent="center" gap={2}>
-            <Text color="gray" dimColor>Tab</Text>
-            <Text color="gray">switch mode</Text>
-            <Text color="gray" dimColor>│</Text>
-            <Text color="gray" dimColor>Ctrl+P</Text>
-            <Text color="gray">commands</Text>
-          </Box>
-        </Box>
-      )}
-      
-      {maxScroll > 0 && effectiveOffset > 0 && effectiveOffset < maxScroll && (
-        <Box justifyContent="center" paddingTop={0}>
-          <Text color="gray" dimColor>
-            ↓ {maxScroll - effectiveOffset} more below ↓
+
+      {clipped && (
+        <Box flexDirection="row" width={width}>
+          <Box width={INDENT} flexShrink={0} />
+          <Text color={COLOR.muted} dimColor>
+            … earlier output scrolls up when complete
           </Text>
         </Box>
       )}
+
+      <Box flexDirection="row" width={width}>
+        <Box width={INDENT} flexShrink={0} />
+        <Box flexDirection="column" width={contentWidth}>
+          <MarkdownText content={text} width={contentWidth} />
+        </Box>
+      </Box>
+    </Box>
+  );
+}
+
+/** Shown once, before the first turn. */
+export function EmptyState({ width }: { width: number }) {
+  return (
+    <Box flexDirection="column" width={width}>
+      <Text color={COLOR.muted} dimColor wrap="truncate-end">
+        Ask a question, describe a change, or press ctrl+p for commands.
+      </Text>
     </Box>
   );
 }

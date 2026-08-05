@@ -1,41 +1,38 @@
 import React from "react";
 import { Box, Text } from "ink";
+import { COLOR } from "../theme.js";
 
-export function UpdateToast({
-  version,
-  onInstall,
-  onDismiss,
-}: {
-  version: string;
-  onInstall: () => void;
-  onDismiss: () => void;
-}) {
-  const columns = process.stdout.columns ?? 80;
-  const width = Math.min(64, Math.max(36, columns - 4));
+/**
+ * Update notice, rendered inline above the prompt.
+ *
+ * Previously this was an absolutely-positioned box nudged right with a computed
+ * `marginLeft`, which drew straight over the header.
+ */
+export function UpdateToast({ version, width }: { version: string; width: number }) {
+  const inner = Math.max(8, width - 4);
 
   return (
     <Box
-      position="absolute"
-      width={width}
-      marginLeft={Math.max(0, columns - width)}
       flexDirection="column"
+      width={width}
       borderStyle="round"
-      borderColor="yellow"
+      borderColor={COLOR.warning}
       paddingX={1}
-      paddingY={0}
-      backgroundColor="#161b22"
     >
-      <Box justifyContent="space-between" alignItems="center">
-        <Text color="yellow" bold>Update available</Text>
-        <Text color="gray">[Esc] dismiss</Text>
+      <Box width={inner}>
+        <Text wrap="truncate-end">
+          <Text color={COLOR.warning} bold>
+            Update available
+          </Text>
+          <Text color={COLOR.muted} dimColor>
+            {"  "}v{version}
+          </Text>
+        </Text>
       </Box>
-      <Text color="white">
-        New version <Text color="cyan" bold>v{version}</Text> is available.
-      </Text>
-      <Text color="gray">Would you like to install it?</Text>
-      <Box gap={2} paddingTop={1}>
-        <Text color="green" bold>[Enter] Install</Text>
-        <Text color="gray">[X] Close</Text>
+      <Box width={inner}>
+        <Text color={COLOR.muted} wrap="truncate-end">
+          ↵ install now   esc dismiss
+        </Text>
       </Box>
     </Box>
   );

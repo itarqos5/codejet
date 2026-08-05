@@ -1,88 +1,70 @@
-import React, { useState, useEffect } from "react";
+import React from "react";
 import { Box, Text } from "ink";
-import { TextInput } from "@inkjs/ui";
+import { COLOR, GLYPH, truncate } from "../theme.js";
 import type { PendingQuestion } from "../state.js";
 
-function AnimatedCursor() {
-  const [show, setShow] = useState(true);
-  
-  useEffect(() => {
-    const interval = setInterval(() => setShow((s) => !s), 400);
-    return () => clearInterval(interval);
-  }, []);
-  
-  return <Text color="yellow" bold>{show ? "▋" : " "}</Text>;
-}
-
+/**
+ * Inline question panel for the ask() tool.
+ *
+ * Free-text answers reuse the main prompt (the parent routes submissions to the
+ * pending question), so there is only ever one text input mounted. Two inputs
+ * competing for the same keystrokes was why typed characters used to land in
+ * both places.
+ */
 export function QuestionPrompt({
   question,
-  onAnswer,
+  selectedIndex,
+  width,
 }: {
   question: PendingQuestion;
-  onAnswer: (answer: string) => void;
+  selectedIndex: number;
+  width: number;
 }) {
-  const [selectedIndex, setSelectedIndex] = useState(0);
-  const hasOptions = question.options && question.options.length > 0;
+  const inner = Math.max(8, width - 4);
+  const options = question.options ?? [];
 
   return (
     <Box
       flexDirection="column"
-      borderStyle="double"
-      borderColor="yellow"
-      padding={1}
-      gap={1}
+      width={width}
+      borderStyle="round"
+      borderColor={COLOR.warning}
+      paddingX={1}
     >
-      {/* Question header */}
-      <Box gap={1}>
-        <Text color="yellow" bold>◆</Text>
-        <Text color="yellow" bold>Question</Text>
+      <Box width={inner} flexDirection="row">
+        <Text color={COLOR.warning} bold>
+          {GLYPH.brand}{" "}
+        </Text>
+        <Box width={Math.max(4, inner - 2)}>
+          <Text color={COLOR.text} wrap="wrap">
+            {question.question}
+          </Text>
+        </Box>
       </Box>
-      
-      {/* Question text */}
-      <Box paddingLeft={2}>
-        <Text color="white">{question.question}</Text>
-      </Box>
-      
-      <Box>
-        <Text color="gray">{"─".repeat(30)}</Text>
-      </Box>
-      
-      {hasOptions ? (
-        <Box flexDirection="column" paddingLeft={2} gap={1}>
-          {question.options!.map((opt, i) => (
-            <Box key={i} gap={1} alignItems="center">
-              <Text color={i === selectedIndex ? "yellow" : "gray"}>
-                {i === selectedIndex ? "▸" : " "}
+
+      {options.length > 0 ? (
+        <Box flexDirection="column" width={inner}>
+          {options.map((opt, i) => (
+            <Text key={i} wrap="truncate-end">
+              <Text color={i === selectedIndex ? COLOR.warning : COLOR.muted}>
+                {i === selectedIndex ? GLYPH.selected : " "}{" "}
               </Text>
-              <Text 
-                color={i === selectedIndex ? "white" : "gray"} 
+              <Text
+                color={i === selectedIndex ? COLOR.text : COLOR.textDim}
                 bold={i === selectedIndex}
               >
-                {i + 1}. {opt}
+                {truncate(opt, inner - 3)}
               </Text>
-            </Box>
+            </Text>
           ))}
-          <Box paddingTop={1} gap={2}>
-            <Text color="gray" dimColor>↑↓</Text>
-            <Text color="gray" dimColor>select</Text>
-            <Text color="gray">│</Text>
-            <Text color="gray" dimColor>Enter</Text>
-            <Text color="gray" dimColor>confirm</Text>
-          </Box>
+          <Text color={COLOR.muted} dimColor wrap="truncate-end">
+            ↑↓ move   ↵ answer
+          </Text>
         </Box>
       ) : (
-        <Box flexDirection="column" paddingLeft={2} gap={1}>
-          <Box gap={1} alignItems="center">
-            <AnimatedCursor />
-            <TextInput
-              onSubmit={(value) => {
-                if (value.trim()) onAnswer(value.trim());
-              }}
-              placeholder="Type your answer..."
-            />
-          </Box>
-          <Text color="gray" dimColor>Press Enter to submit</Text>
-        </Box>
+        <Text color={COLOR.muted} dimColor wrap="truncate-end">
+          Type your answer below and press ↵
+        </Text>
       )}
     </Box>
   );

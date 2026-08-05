@@ -1,4 +1,5 @@
 import { loadKeys } from "./keys.js";
+import { logger } from "./logger.js";
 
 const DEFAULT_BASE = "http://127.0.0.1:4096";
 
@@ -222,7 +223,10 @@ export async function waitForAssistantMessage(
         return latest;
       }
     } catch (error) {
-      console.error("[opencode] Error polling messages:", error);
+      logger.warn(
+        "opencode",
+        `Error polling messages: ${error instanceof Error ? error.message : String(error)}`,
+      );
     }
 
     await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));

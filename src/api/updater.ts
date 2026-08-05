@@ -2,6 +2,7 @@ import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
 import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
+import { logger } from "./logger.js";
 
 const execFileAsync = promisify(execFile);
 const REPO = "itarqos5/codejet";
@@ -64,7 +65,7 @@ async function fetchRemoteVersion(): Promise<string | null> {
       });
 
       if (!res.ok) {
-        console.error(`[updater] ${url} returned ${res.status}`);
+        logger.warn("updater", `${url} returned ${res.status}`);
         continue;
       }
 
@@ -81,7 +82,10 @@ async function fetchRemoteVersion(): Promise<string | null> {
         if (pkg?.version) return pkg.version;
       }
     } catch (err) {
-      console.error(`[updater] Failed to fetch ${url}:`, err instanceof Error ? err.message : String(err));
+      logger.warn(
+        "updater",
+        `Failed to fetch ${url}: ${err instanceof Error ? err.message : String(err)}`,
+      );
     }
   }
 
@@ -89,19 +93,19 @@ async function fetchRemoteVersion(): Promise<string | null> {
 }
 
 export async function checkForUpdate(): Promise<UpdateInfo | null> {
-  console.log(`[updater] Checking for updates (current: v${VERSION})...`);
-  
+  logger.info("updater", `Checking for updates (current: v${VERSION})`);
+
   const remote = await fetchRemoteVersion();
 
   if (!remote) {
-    console.error("[updater] Could not fetch remote version from any endpoint");
+    logger.warn("updater", "Could not fetch remote version from any endpoint");
     return null;
   }
 
-  console.log(`[updater] Remote version: v${remote}`);
+  logger.info("updater", `Remote version: v${remote}`);
 
   if (!isNewer(remote, VERSION)) {
-    console.log(`[updater] v${VERSION} is up to date (remote: v${remote})`);
+    logger.info("updater", `v${VERSION} is up to date (remote: v${remote})`);
     return null;
   }
 

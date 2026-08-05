@@ -1,27 +1,29 @@
 import React from "react";
 import { Box, Text } from "ink";
+import { COLOR } from "../theme.js";
 
-export function PlanPrompt({
-  onProceed,
-  onDismiss,
-}: {
-  onProceed: () => void;
-  onDismiss: () => void;
-}) {
+/** Inline confirmation shown after a plan-mode response. */
+export function PlanPrompt({ width }: { width: number }) {
+  const inner = Math.max(8, width - 4);
+
   return (
     <Box
-      borderStyle="round"
-      borderColor="yellow"
-      paddingX={1}
       flexDirection="column"
-      marginBottom={1}
+      width={width}
+      borderStyle="round"
+      borderColor={COLOR.warning}
+      paddingX={1}
     >
-      <Text color="yellow" bold>
-        Plan ready!
-      </Text>
-      <Text color="gray">
-        Press <Text color="green" bold>[Enter]</Text> to proceed with build mode, or <Text color="red" bold>[Esc]</Text> to dismiss.
-      </Text>
+      <Box width={inner}>
+        <Text color={COLOR.warning} bold wrap="truncate-end">
+          Plan ready
+        </Text>
+      </Box>
+      <Box width={inner}>
+        <Text color={COLOR.muted} wrap="truncate-end">
+          ↵ switch to build and continue   esc keep planning
+        </Text>
+      </Box>
     </Box>
   );
 }

@@ -1,94 +1,91 @@
-import React, { useEffect, useState } from "react";
+import React from "react";
 import { Box, Text } from "ink";
+import { COLOR, truncate } from "../theme.js";
 import { formatContextUsage } from "../models.js";
 import type { AppMode } from "../state.js";
 
-function StreamingDot() {
-  const [frame, setFrame] = useState(0);
-
-  useEffect(() => {
-    const interval = setInterval(() => setFrame((f) => (f + 1) % 4), 250);
-    return () => clearInterval(interval);
-  }, []);
-
-  const dots = ".".repeat(frame + 1);
-  return <Text color="yellow" bold>Processing{dots.padEnd(4)}</Text>;
-}
-
+/**
+ * Bottom status bar: one row, always exactly `width` cells.
+ *
+ * Both halves are measured and the left half is truncated so the two can never
+ * collide or push the row past the terminal edge, which is what made the old
+ * header text overlap the model name.
+ */
 export function StatusBar({
   mode,
-  modelId,
+  modelName,
   contextUsed,
   contextMax,
-  streaming,
+  busy,
   cancelPending,
   todoCount,
+  width,
 }: {
   mode: AppMode;
-  modelId: string;
+  modelName: string;
   contextUsed: number;
   contextMax: number;
-  streaming: boolean;
+  busy: boolean;
   cancelPending: boolean;
   todoCount: number;
+  width: number;
 }) {
-  const contextStr = formatContextUsage(contextUsed, contextMax);
-  const contextPercent = contextMax > 0 ? Math.round((contextUsed / contextMax) * 100) : 0;
-  const modeColor = mode === "build" ? "blue" : "yellow";
-  const modeLabel = mode === "build" ? "BUILD" : "PLAN";
+  const safeWidth = Math.max(20, width);
 
-  // Context bar
-  const barWidth = 10;
-  const filledWidth = Math.min(Math.round((contextPercent / 100) * barWidth), barWidth);
-  const contextBar = "█".repeat(filledWidth) + "░".repeat(barWidth - filledWidth);
-  const barColor = contextPercent > 80 ? "red" : contextPercent > 60 ? "yellow" : "cyan";
+  const modeLabel = mode === "build" ? "build" : "plan";
+  const modeColor = mode === "build" ? COLOR.accent : COLOR.warning;
+
+  const percent = contextMax > 0 ? Math.round((contextUsed / contextMax) * 100) : 0;
+  const barWidth = 8;
+  const filled = Math.min(barWidth, Math.round((percent / 100) * barWidth));
+  const bar = "▰".repeat(filled) + "▱".repeat(barWidth - filled);
+  const barColor = percent > 85 ? COLOR.error : percent > 65 ? COLOR.warning : COLOR.accentSoft;
+  const contextLabel = formatContextUsage(contextUsed, contextMax);
+
+  // Right half is fixed content; reserve its exact width first.
+  const rightText = `${bar} ${contextLabel}`;
+  const rightWidth = rightText.length;
+
+  const hints = cancelPending
+    ? "esc again to cancel"
+    : busy
+      ? "esc interrupt"
+      : "tab mode   ctrl+p menu";
+  const todoPart = todoCount > 0 ? `   ${todoCount} todo${todoCount === 1 ? "" : "s"}` : "";
+
+  const leftPlain = `${modeLabel}   ${hints}${todoPart}`;
+  const leftBudget = Math.max(0, safeWidth - rightWidth - 2);
+  const leftFits = leftPlain.length <= leftBudget;
 
   return (
-    <Box justifyContent="space-between" paddingX={1}>
-      {/* Left side - Mode and status */}
-      <Box gap={2} alignItems="center">
-        {/* Mode indicator */}
-        <Text color={modeColor} bold>[{modeLabel}]</Text>
-
-        <Text color="gray">│</Text>
-
-        {/* Streaming indicator with ESC hint */}
-        <Box gap={1} alignItems="center">
-          {streaming ? (
-            <>
-              <StreamingDot />
-              <Text color="gray">│</Text>
-              {cancelPending ? (
-                <Text color="red" bold>Press ESC again to confirm cancel</Text>
-              ) : (
-                <Text color="gray" dimColor>Press ESC to cancel</Text>
-              )}
-            </>
-          ) : (
-            <>
-              <Text color="green">●</Text>
-              <Text color="gray" dimColor>Ready</Text>
-            </>
-          )}
-        </Box>
-
-        {/* Todo count */}
-        {todoCount > 0 && (
-          <>
-            <Text color="gray">│</Text>
-            <Text color="magenta" bold>☑ {todoCount}</Text>
-          </>
+    <Box width={safeWidth} flexDirection="row" justifyContent="space-between">
+      <Box flexShrink={1}>
+        {leftFits ? (
+          <Text wrap="truncate-end">
+            <Text color={modeColor} bold>
+              {modeLabel}
+            </Text>
+            <Text color={cancelPending ? COLOR.error : COLOR.muted} dimColor={!cancelPending}>
+              {"   "}
+              {hints}
+              {todoPart}
+            </Text>
+          </Text>
+        ) : (
+          <Text color={modeColor} bold wrap="truncate-end">
+            {truncate(modeLabel, leftBudget)}
+          </Text>
         )}
       </Box>
 
-      {/* Right side - Context and help */}
-      <Box gap={2} alignItems="center">
-        <Box gap={1} alignItems="center">
-          <Text color={barColor}>{contextBar}</Text>
-          <Text color="white">{contextStr}</Text>
-        </Box>
-        <Text color="gray">│</Text>
-        <Text color="gray" dimColor>Ctrl+P</Text>
+      <Box flexShrink={0}>
+        <Text wrap="truncate-end">
+          <Text color={barColor}>{bar}</Text>
+          <Text color={COLOR.muted} dimColor>
+            {" "}
+            {contextLabel}
+          </Text>
+        </Text>
       </Box>
     </Box>
   );

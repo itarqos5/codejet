@@ -1,136 +1,101 @@
-import React, { useEffect, useState } from "react";
+import React from "react";
 import { Box, Text } from "ink";
+import { COLOR, truncate } from "../theme.js";
+import { Spinner } from "./spinner.js";
 import type { UpdatePhase } from "../state.js";
 
-// Steps in the update process with weights for progress estimation
-const UPDATE_STEPS = [
-  { label: "Fetching latest from origin...", weight: 15 },
-  { label: "Pulling updates...", weight: 25 },
-  { label: "Installing dependencies...", weight: 35 },
-  { label: "Building project...", weight: 20 },
-  { label: "Finalizing...", weight: 5 },
-];
-
-function ProgressBar({
+export function ProgressBar({
   percent,
-  width = 40,
-  color = "cyan",
+  width,
+  color = COLOR.accent,
 }: {
   percent: number;
-  width?: number;
+  width: number;
   color?: string;
 }) {
-  const clampedPercent = Math.max(0, Math.min(100, percent));
-  const filledWidth = Math.round((clampedPercent / 100) * width);
-  const emptyWidth = width - filledWidth;
-
-  const filled = "█".repeat(filledWidth);
-  const empty = "░".repeat(emptyWidth);
+  const clamped = Math.max(0, Math.min(100, percent));
+  const barWidth = Math.max(4, width);
+  const filled = Math.round((clamped / 100) * barWidth);
 
   return (
-    <Box gap={1} alignItems="center">
-      <Text color={color}>{filled}</Text>
-      <Text color="gray">{empty}</Text>
-      <Text color="white" bold>{clampedPercent}%</Text>
-    </Box>
+    <Text wrap="truncate-end">
+      <Text color={color}>{"▰".repeat(filled)}</Text>
+      <Text color={COLOR.border}>{"▱".repeat(barWidth - filled)}</Text>
+      <Text color={COLOR.muted} dimColor>
+        {" "}
+        {clamped}%
+      </Text>
+    </Text>
   );
 }
 
-export function UpdateOverlay({
+/**
+ * Update progress panel, rendered inline above the prompt rather than as a
+ * full-screen absolute overlay drawn on top of the transcript.
+ */
+export function UpdatePanel({
   phase,
   currentTask,
   progress,
   error,
+  width,
 }: {
   phase: UpdatePhase;
   currentTask: string;
   progress: number;
   error?: string | null;
+  width: number;
 }) {
   if (phase === "idle" || phase === "checking") return null;
 
-  const rows = process.stdout.rows ?? 24;
-  const cols = process.stdout.columns ?? 80;
-  const overlayWidth = Math.min(60, cols - 10);
-  const topPad = Math.max(2, Math.floor((rows - 10) / 2));
-
+  const inner = Math.max(8, width - 4);
   const isDone = phase === "done";
   const isError = phase === "error";
-  const borderColor = isDone ? "green" : isError ? "red" : "cyan";
-  const title = isDone
-    ? "Update Complete"
-    : isError
-    ? "Update Failed"
-    : "Updating CodeJet";
+  const color = isDone ? COLOR.success : isError ? COLOR.error : COLOR.accent;
+  const title = isDone ? "Update complete" : isError ? "Update failed" : "Updating CodeJet";
 
   return (
     <Box
       flexDirection="column"
-      position="absolute"
-      width="100%"
-      height="100%"
-      justifyContent="center"
-      alignItems="center"
+      width={width}
+      borderStyle="round"
+      borderColor={color}
+      paddingX={1}
     >
-      {/* Semi-transparent overlay effect via empty lines */}
-      {Array.from({ length: topPad }).map((_, i) => (
-        <Text key={`pad-${i}`}>{" "}</Text>
-      ))}
+      <Box width={inner} flexDirection="row">
+        {!isDone && !isError ? <Spinner color={color} /> : null}
+        <Text color={color} bold wrap="truncate-end">
+          {!isDone && !isError ? " " : ""}
+          {title}
+        </Text>
+      </Box>
 
-      <Box
-        flexDirection="column"
-        borderStyle="double"
-        borderColor={borderColor}
-        paddingX={2}
-        paddingY={1}
-        width={overlayWidth}
-        alignItems="center"
-      >
-        {/* Title */}
-        <Box paddingBottom={1} justifyContent="center">
-          <Text color={borderColor} bold>
-            {isDone ? "✓" : isError ? "✕" : "◈"} {title}
-          </Text>
+      {!isDone && !isError && (
+        <Box width={inner}>
+          <ProgressBar percent={progress} width={Math.min(24, inner - 6)} />
         </Box>
+      )}
 
-        {/* Progress bar */}
-        {!isDone && !isError && (
-          <Box flexDirection="column" paddingBottom={1} alignItems="center" width="100%">
-            <ProgressBar
-              percent={progress}
-              width={Math.min(overlayWidth - 12, 35)}
-              color="cyan"
-            />
-          </Box>
-        )}
+      <Box width={inner}>
+        <Text
+          color={isError ? COLOR.error : isDone ? COLOR.success : COLOR.textDim}
+          wrap="truncate-end"
+        >
+          {truncate(
+            isError
+              ? (error || "An error occurred during the update")
+              : isDone
+                ? "Restart to load the new version"
+                : currentTask || "Preparing…",
+            inner,
+          )}
+        </Text>
+      </Box>
 
-        {/* Current task label */}
-        <Box paddingBottom={1} justifyContent="center">
-          {isError ? (
-            <Text color="red">{error || "An error occurred during update"}</Text>
-          ) : isDone ? (
-            <Text color="green">All changes applied successfully</Text>
-          ) : (
-            <Text color="yellow">{currentTask || "Preparing..."}</Text>
-          )}
-        </Box>
-
-        {/* Action hints */}
-        <Box paddingTop={1} justifyContent="center" gap={2}>
-          {isDone && (
-            <Box borderStyle="round" borderColor="green" paddingX={1}>
-              <Text color="green" bold>[Enter] Restart</Text>
-            </Box>
-          )}
-          {isError && (
-            <Box borderStyle="round" borderColor="gray" paddingX={1}>
-              <Text color="gray">[Esc] Close</Text>
-            </Box>
-          )}
-          {phase === "installing" && (
-            <Text color="gray" dimColor>Please wait...</Text>
-          )}
-        </Box>
+      <Box width={inner}>
+        <Text color={COLOR.muted} dimColor wrap="truncate-end">
+          {isDone ? "↵ restart now" : isError ? "esc close" : "please wait…"}
+        </Text>
       </Box>
     </Box>
   );

@@ -1,90 +1,211 @@
-import React, { useState, useEffect, useRef } from "react";
-import { Box, Text } from "ink";
-import { TextInput } from "@inkjs/ui";
+import React, { useCallback, useRef, useState } from "react";
+import { Box, Text, useInput } from "ink";
+import { COLOR, GLYPH } from "../theme.js";
 import type { AppMode } from "../state.js";
 
-export function InputBox({
+/**
+ * The prompt.
+ *
+ * Written from scratch rather than using a component library so the cursor,
+ * editing keys and paste behaviour are all under our control and the box can be
+ * given an exact width. The previous version relied on a third-party input plus
+ * a 500ms blink interval, which re-rendered the whole tree twice a second while
+ * output was streaming.
+ *
+ * Layout invariant: the bordered box is exactly `width` cells wide, and its
+ * inner text is `width - 4` (two border cells, two padding cells). Nothing is
+ * ever allowed to reach the terminal edge.
+ */
+
+/** Maximum wrapped rows the prompt may occupy before it windows the text. */
+const MAX_ROWS = 6;
+
+function stripControl(input: string): string {
+  // eslint-disable-next-line no-control-regex
+  return input.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, "");
+}
+
+function deleteWordLeft(value: string, cursor: number): { value: string; cursor: number } {
+  if (cursor === 0) return { value, cursor };
+  let i = cursor;
+  while (i > 0 && /\s/.test(value[i - 1])) i--;
+  while (i > 0 && !/\s/.test(value[i - 1])) i--;
+  return { value: value.slice(0, i) + value.slice(cursor), cursor: i };
+}
+
+export function PromptInput({
   mode,
-  modelName,
-  onSubmit,
   disabled,
-  messageCount,
+  busy,
+  width,
+  onSubmit,
 }: {
   mode: AppMode;
-  modelName: string;
-  onSubmit: (value: string) => void;
+  /** Input is not accepting keys (modal open, question pending). */
   disabled: boolean;
-  messageCount: number;
+  /** A request is in flight; typing is allowed but submit is blocked. */
+  busy: boolean;
+  width: number;
+  onSubmit: (value: string) => void;
 }) {
-  const [cursorPosition, setCursorPosition] = useState(0);
-  const cursorRef = useRef<NodeJS.Timeout | null>(null);
-  const [showCursor, setShowCursor] = useState(true);
-  
-  const borderColor = mode === "build" ? "blue" : "yellow";
-  const modeLabel = mode === "build" ? "BUILD" : "PLAN";
-  const modeBg = mode === "build" ? "#001a33" : "#332200";
+  const [value, setValue] = useState("");
+  const [cursor, setCursor] = useState(0);
+  const history = useRef<string[]>([]);
+  const historyIndex = useRef<number>(-1);
 
-  // Blinking cursor effect
-  useEffect(() => {
-    cursorRef.current = setInterval(() => {
-      setShowCursor((s) => !s);
-    }, 500);
-    return () => {
-      if (cursorRef.current) clearInterval(cursorRef.current);
-    };
-  }, []);
+  const accent = mode === "build" ? COLOR.accent : COLOR.warning;
+  const contentWidth = Math.max(8, width - 4);
+
+  const submit = useCallback(() => {
+    const trimmed = value.trim();
+    if (!trimmed || busy) return;
+    history.current = [trimmed, ...history.current.filter((h) => h !== trimmed)].slice(0, 100);
+    historyIndex.current = -1;
+    setValue("");
+    setCursor(0);
+    onSubmit(trimmed);
+  }, [value, busy, onSubmit]);
+
+  useInput(
+    (input, key) => {
+      if (key.return) {
+        submit();
+        return;
+      }
+
+      if (key.leftArrow) {
+        setCursor((c) => Math.max(0, c - 1));
+        return;
+      }
+      if (key.rightArrow) {
+        setCursor((c) => Math.min(value.length, c + 1));
+        return;
+      }
+
+      // Backspace and Delete both remove the character to the left: on Windows
+      // terminals ink reports the backspace key inconsistently between the two.
+      if (key.backspace || key.delete) {
+        if (cursor > 0) {
+          setValue(value.slice(0, cursor - 1) + value.slice(cursor));
+          setCursor(cursor - 1);
+        }
+        return;
+      }
+
+      if (key.ctrl) {
+        switch (input) {
+          case "a":
+            setCursor(0);
+            return;
+          case "e":
+            setCursor(value.length);
+            return;
+          case "u":
+            setValue(value.slice(cursor));
+            setCursor(0);
+            return;
+          case "k":
+            setValue(value.slice(0, cursor));
+            return;
+          case "w": {
+            const next = deleteWordLeft(value, cursor);
+            setValue(next.value);
+            setCursor(next.cursor);
+            return;
+          }
+          default:
+            // Other ctrl combos belong to the global handler.
+            return;
+        }
+      }
+
+      // History recall, only when it cannot be confused with cursor movement.
+      if (key.upArrow) {
+        if (history.current.length === 0) return;
+        const next = Math.min(history.current.length - 1, historyIndex.current + 1);
+        historyIndex.current = next;
+        const recalled = history.current[next] ?? "";
+        setValue(recalled);
+        setCursor(recalled.length);
+        return;
+      }
+      if (key.downArrow) {
+        if (historyIndex.current <= 0) {
+          historyIndex.current = -1;
+          setValue("");
+          setCursor(0);
+          return;
+        }
+        historyIndex.current -= 1;
+        const recalled = history.current[historyIndex.current] ?? "";
+        setValue(recalled);
+        setCursor(recalled.length);
+        return;
+      }
+
+      if (key.escape || key.tab) return;
+
+      // Printable input. A paste arrives as one chunk, so this handles it too.
+      const text = stripControl(input);
+      if (!text) return;
+      setValue(value.slice(0, cursor) + text + value.slice(cursor));
+      setCursor(cursor + text.length);
+    },
+    { isActive: !disabled },
+  );
+
+  // Keep the prompt from growing without bound: window the text around the
+  // cursor once it would exceed MAX_ROWS wrapped rows.
+  const budget = contentWidth * MAX_ROWS;
+  let display = value;
+  let displayCursor = cursor;
+  if (value.length > budget) {
+    const start = Math.max(0, Math.min(value.length - budget, cursor - Math.floor(budget / 2)));
+    display = value.slice(start, start + budget);
+    displayCursor = cursor - start;
+  }
+
+  const before = display.slice(0, displayCursor);
+  const atCursor = display.slice(displayCursor, displayCursor + 1) || " ";
+  const after = display.slice(displayCursor + 1);
+
+  const placeholder = busy
+    ? "Working… type your next message or press esc to interrupt"
+    : mode === "plan"
+      ? "Describe what you want planned"
+      : "Ask, edit, or describe a change";
 
   return (
-    <Box
-      flexDirection="column"
-      borderStyle="round"
-      borderColor={borderColor}
-      paddingX={1}
-      paddingY={0}
-    >
-      {/* Mode indicator bar */}
-      <Box gap={0}>
-        <Text color={borderColor} bold>{modeLabel}</Text>
-        <Text color="gray"> │ </Text>
-        <Text color="cyan">{modelName}</Text>
-        {disabled && (
-          <>
-            <Text color="gray"> │ </Text>
-            <Text color="yellow" bold>⚡ Processing...</Text>
-          </>
-        )}
-      </Box>
-      
-      {/* Input line with futuristic styling */}
-      <Box gap={1} alignItems="center">
-        <Text color={borderColor} bold>
-          {showCursor ? "▸" : "›"}
-        </Text>
-        <TextInput
-          key={messageCount}
-          onSubmit={(value) => {
-            if (value.trim() && !disabled) {
-              onSubmit(value.trim());
-            }
-          }}
-          placeholder={disabled ? "Waiting for model response..." : "Enter your request..."}
-          isDisabled={disabled}
-        />
-      </Box>
-      
-      {/* Helper hints */}
-      {!disabled && (
-        <Box gap={2}>
-          <Text color="gray" dimColor>Enter</Text>
-          <Text color="gray" dimColor>send</Text>
-          <Text color="gray">│</Text>
-          <Text color="gray" dimColor>Tab</Text>
-          <Text color="gray" dimColor>switch mode</Text>
-          <Text color="gray">│</Text>
-          <Text color="gray" dimColor>Ctrl+P</Text>
-          <Text color="gray" dimColor>menu</Text>
+    <Box flexDirection="column" width={width}>
+      <Box
+        width={width}
+        borderStyle="round"
+        borderColor={disabled ? COLOR.border : accent}
+        borderDimColor={disabled}
+        paddingX={1}
+      >
+        <Box width={contentWidth} flexDirection="row">
+          <Text color={accent} bold>
+            {GLYPH.prompt}{" "}
+          </Text>
+          <Box width={Math.max(4, contentWidth - 2)}>
+            {value.length === 0 ? (
+              <Text wrap="truncate-end">
+                {!disabled && <Text inverse> </Text>}
+                <Text color={COLOR.muted} dimColor>
+                  {placeholder}
+                </Text>
+              </Text>
+            ) : (
+              <Text wrap="wrap" color={COLOR.text}>
+                {before}
+                {disabled ? atCursor : <Text inverse>{atCursor}</Text>}
+                {after}
+              </Text>
+            )}
+          </Box>
         </Box>
-      )}
+      </Box>
     </Box>
   );
 }
