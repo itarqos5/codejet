@@ -1,4 +1,6 @@
 import { spawn, execSync, type ChildProcess } from "node:child_process";
+import { logger } from "./logger.js";
+import { provisionOpenCodeTools, requiresServerRestart } from "./opencode-tools.js";
 
 const OPENCODE_PORT = 4096;
 const OPENCODE_HOST = "127.0.0.1";
@@ -8,6 +10,13 @@ let serverReady = false;
 let lastError: string | null = null;
 let serverStartTime = 0;
 let isShuttingDown = false;
+
+/** Set when tools changed but the live server was started by someone else. */
+let staleToolsWarning: string | null = null;
+
+export function getStaleToolsWarning(): string | null {
+  return staleToolsWarning;
+}
 
 export function getOpenCodeBaseUrl(): string {
   return `http://${OPENCODE_HOST}:${OPENCODE_PORT}`;
@@ -83,11 +92,25 @@ export async function waitForServer(timeoutMs = 25000): Promise<boolean> {
 }
 
 export async function startServer(): Promise<boolean> {
+  // Install CodeJet's tools before the server boots. OpenCode reads its tools
+  // directory at startup, so this has to happen first to have any effect.
+  const provisioned = provisionOpenCodeTools();
+  staleToolsWarning = null;
+
   // First check if opencode is already running externally
   const alreadyRunning = await pingServer();
   if (alreadyRunning) {
     serverReady = true;
     lastError = null;
+
+    // We must not restart a server we did not start, but the user should know
+    // its tool set is out of date.
+    if (requiresServerRestart(provisioned)) {
+      staleToolsWarning =
+        "An OpenCode server was already running, so newly installed CodeJet tools " +
+        "(including think) are not loaded. Restart that server to pick them up.";
+      logger.warn("opencode", staleToolsWarning);
+    }
     return true;
   }
 
