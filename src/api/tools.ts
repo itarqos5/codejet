@@ -1,4 +1,7 @@
-import type { Tool as KiloTool } from "./kilocode.js";
+import type {
+  ChatMessage as KiloChatMessage,
+  Tool as KiloTool,
+} from "./kilocode.js";
 
 // ── Unified Tool Types ──────────────────────────────────────
 
@@ -106,7 +109,7 @@ export function toKiloTools(tools: ToolDefinition[]): KiloTool[] {
 
 export interface AgenticOptions {
   model: string;
-  messages: { role: string; content: string; tool_call_id?: string; name?: string }[];
+  messages: KiloChatMessage[];
   tools?: ToolDefinition[];
   maxIterations?: number;
   context?: ToolContext;
@@ -116,7 +119,7 @@ export interface AgenticOptions {
 }
 
 export interface AgenticResult {
-  messages: { role: string; content: string; tool_call_id?: string; name?: string }[];
+  messages: KiloChatMessage[];
   iterations: number;
   toolCalls: ToolCall[];
   toolResults: ToolResult[];
@@ -149,7 +152,7 @@ export async function runAgenticLoop(
 
     const response = await kilo.chatCompletions({
       model,
-      messages: messages as never[],
+      messages,
       tools: tools.length > 0 ? toKiloTools(tools) : undefined,
       tool_choice: tools.length > 0 ? "auto" : undefined,
     });
@@ -158,20 +161,44 @@ export async function runAgenticLoop(
     if (!choice) break;
 
     const assistantMessage = choice.message;
-    messages.push({ role: "assistant", content: assistantMessage.content ?? "" });
+    messages.push({
+      role: "assistant",
+      content: assistantMessage.content ?? "",
+      tool_calls: assistantMessage.tool_calls,
+    });
     onMessage?.({ role: "assistant", content: assistantMessage.content ?? "" });
 
     // No tool calls — we're done
-    if (choice.finish_reason !== "tool_calls" || !assistantMessage.tool_calls) {
+    if (!assistantMessage.tool_calls?.length) {
       break;
     }
 
     // Process tool calls
     for (const tc of assistantMessage.tool_calls) {
+      let argumentsValue: Record<string, unknown>;
+      try {
+        argumentsValue = JSON.parse(tc.function.arguments) as Record<string, unknown>;
+      } catch {
+        const result: ToolResult = {
+          toolCallId: tc.id,
+          content: `Tool error: invalid JSON arguments for ${tc.function.name}`,
+          isError: true,
+        };
+        allToolResults.push(result);
+        onToolResult?.(result);
+        messages.push({
+          role: "tool",
+          content: result.content,
+          tool_call_id: result.toolCallId,
+          name: tc.function.name,
+        });
+        continue;
+      }
+
       const call: ToolCall = {
         id: tc.id,
         name: tc.function.name,
-        arguments: JSON.parse(tc.function.arguments),
+        arguments: argumentsValue,
       };
       allToolCalls.push(call);
       onToolCall?.(call);
@@ -184,6 +211,7 @@ export async function runAgenticLoop(
         role: "tool",
         content: result.content,
         tool_call_id: result.toolCallId,
+        name: call.name,
       });
     }
   }

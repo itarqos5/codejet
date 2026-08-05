@@ -61,8 +61,6 @@ export const ALL_TOOLS = [
   askTool,
 ];
 
-let registered = false;
-
 /**
  * Populates the shared tool registry. Safe to call more than once.
  *
@@ -70,7 +68,5 @@ let registered = false;
  * this directory were dead code and the chat path hardcoded two inline schemas.
  */
 export function registerAllTools(): void {
-  if (registered) return;
   registerTools(ALL_TOOLS);
-  registered = true;
 }
