@@ -25,7 +25,13 @@ export const editTool: ToolDefinition = {
     const raw = await readFile(path, "utf-8");
     const lines = raw.split("\n");
 
-    if (from < 1 || to < from || from > lines.length) {
+    if (
+      !Number.isInteger(from) ||
+      !Number.isInteger(to) ||
+      from < 1 ||
+      to < from ||
+      to > lines.length
+    ) {
       return `Error: invalid line range ${from}-${to} (file has ${lines.length} lines)`;
     }
 
