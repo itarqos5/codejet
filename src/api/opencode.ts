@@ -92,12 +92,38 @@ export interface Message {
 }
 
 export function getMessageText(message: Message): string {
-  if (typeof message.text === "string") return message.text;
+  // Direct text field
+  if (typeof message.text === "string" && message.text.trim()) {
+    return message.text;
+  }
+  
+  // Content array
   const parts = message.content ?? message.parts ?? [];
-  return parts
-    .filter((part) => part.type === "text" || part.content != null || part.text != null)
-    .map((part) => part.content ?? part.text ?? "")
-    .join("");
+  if (parts.length === 0) {
+    return "";
+  }
+  
+  // Extract text from parts, handling various formats
+  const textParts: string[] = [];
+  for (const part of parts) {
+    // Check for direct content field
+    if (typeof part.content === "string" && part.content.trim()) {
+      textParts.push(part.content);
+    }
+    // Check for text field
+    else if (typeof part.text === "string" && part.text.trim()) {
+      textParts.push(part.text);
+    }
+    // Check for type: text
+    else if (part.type === "text") {
+      const txt = part.content ?? part.text ?? "";
+      if (typeof txt === "string" && txt.trim()) {
+        textParts.push(txt);
+      }
+    }
+  }
+  
+  return textParts.join("\n");
 }
 
 export interface PromptResponse {

@@ -14,16 +14,12 @@ export interface FreeModel {
 export const OPENCODE_MODELS: FreeModel[] = [
   { id: "opencode/deepseek-v4-flash-free", name: "DeepSeek V4 Flash", provider: "opencode", maxContext: 200000 },
   { id: "opencode/mimo-v2.5-free", name: "MiMo V2.5", provider: "opencode", maxContext: 200000 },
-  { id: "opencode/mimo-v2-pro-free", name: "MiMo V2 Pro", provider: "opencode", maxContext: 1048576 },
   { id: "opencode/nemotron-3-ultra-free", name: "Nemotron 3 Ultra", provider: "opencode", maxContext: 1000000 },
   { id: "opencode/laguna-s-2.1-free", name: "Laguna S 2.1", provider: "opencode", maxContext: 256000 },
   { id: "opencode/ling-3.0-flash-free", name: "Ling 3.0 Flash", provider: "opencode", maxContext: 262144 },
   { id: "opencode/north-mini-code-free", name: "North Mini Code", provider: "opencode", maxContext: 256000 },
-  { id: "opencode/hy3-free", name: "Hy3", provider: "opencode", maxContext: 190000 },
-  { id: "opencode/qwen3.6-plus-free", name: "Qwen 3.6 Plus", provider: "opencode", maxContext: 262144 },
   { id: "opencode/kimi-k2.5-free", name: "Kimi K2.5", provider: "opencode", maxContext: 262144 },
   { id: "opencode/minimax-m3-free", name: "MiniMax M3", provider: "opencode", maxContext: 200000 },
-  { id: "opencode/ring-2.6-1t-free", name: "Ring 2.6 1T", provider: "opencode", maxContext: 262000 },
 ];
 
 export const KILO_MODELS: FreeModel[] = [
@@ -38,7 +34,6 @@ export const KILO_MODELS: FreeModel[] = [
   { id: "poolside/laguna-s-2.1:free", name: "Laguna S 2.1", provider: "kilo", maxContext: 262144 },
   { id: "poolside/laguna-xs-2.1:free", name: "Laguna XS 2.1", provider: "kilo", maxContext: 262144 },
   { id: "stepfun/step-3.7-flash:free", name: "Step 3.7 Flash", provider: "kilo", maxContext: 262144 },
-  { id: "tencent/hy3:free", name: "Hy3", provider: "kilo", maxContext: 262144 },
 ];
 
 export const ALL_MODELS: FreeModel[] = [...OPENCODE_MODELS, ...KILO_MODELS];
