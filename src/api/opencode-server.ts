@@ -105,10 +105,14 @@ export async function startServer(): Promise<boolean> {
   serverReady = false;
 
   try {
-    // On Windows, use shell: true and the full command
     const isWindows = process.platform === "win32";
 
-    serverProcess = spawn("opencode", ["serve", "--port", String(OPENCODE_PORT), "--hostname", OPENCODE_HOST], {
+    // shell: true with an args array triggers DEP0190 (args are concatenated
+    // unescaped). The command and its arguments are compile-time constants,
+    // so pass a single command string and no args array instead.
+    const command = `opencode serve --port ${OPENCODE_PORT} --hostname ${OPENCODE_HOST}`;
+
+    serverProcess = spawn(command, {
       stdio: ["ignore", "pipe", "pipe"],
       detached: !isWindows, // detach on unix so it survives parent
       windowsHide: true,
