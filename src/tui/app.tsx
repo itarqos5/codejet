@@ -202,7 +202,8 @@ export default function App() {
   const reservedRows =
     3 + // prompt box
     1 + // status bar
-    (state.thinking ? 2 : 0) +
+    // Thinking indicator is a header row plus up to 2 dimmed detail rows.
+    (state.thinking ? 3 : 0) +
     (state.error ? 1 : 0) +
     fileNotifications.length +
     paletteRows +
@@ -258,7 +259,9 @@ export default function App() {
             content={state.streamingContent}
             modelName={modelName}
             width={width}
-            maxLines={maxLiveLines}
+            // LiveMessage adds a model-name header row and, when clipped, a
+            // notice row on top of the content lines — reserve both here.
+            maxLines={Math.max(1, maxLiveLines - 2)}
           />
         )}
 

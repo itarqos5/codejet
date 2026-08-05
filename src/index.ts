@@ -38,7 +38,9 @@ const instance = render(React.createElement(App), {
   // Captures accidental console output from dependencies and replays it above
   // the live frame instead of letting it corrupt the current render.
   patchConsole: true,
-  incrementalRendering: true,
+  // NOTE: incrementalRendering is deliberately off. Combined with <Static> it
+  // diffs against stale line offsets, which appended a new frame per keystroke
+  // instead of redrawing (the "echo" artifact). Throttling alone is enough.
   maxFps: 30,
 });
 
