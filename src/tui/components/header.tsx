@@ -1,117 +1,73 @@
 import React from "react";
 import figlet from "figlet";
 import { Box, Text } from "ink";
-import { COLOR, rule, truncate } from "../theme.js";
+import { COLOR, truncate } from "../theme.js";
 import { VERSION } from "../models.js";
-import type { AppMode } from "../state.js";
 
-const LOGO_LINES = figlet
-  .textSync("CODEJET", { font: "Small" })
-  .trimEnd()
-  .split("\n")
-  .map((line) => line.trimEnd());
+/**
+ * Startup splash.
+ *
+ * Printed exactly once into the static transcript, so it scrolls away with
+ * history instead of being redrawn every frame. The live frame carries no
+ * header chrome at all — just the conversation, the prompt and the status
+ * line, which keeps the surface calm and leaves every spare row for output.
+ */
 
-const LOGO_WIDTH = Math.max(...LOGO_LINES.map((line) => line.length));
+function wordmark(font: "Standard" | "Small"): string[] {
+  return figlet
+    .textSync("CODE JET", { font })
+    .replace(/\s+$/, "")
+    .split("\n")
+    .map((line) => line.replace(/\s+$/, ""));
+}
 
-export function AppHeader({
+const LOGO_STANDARD = wordmark("Standard");
+const LOGO_SMALL = wordmark("Small");
+const LOGO_STANDARD_WIDTH = Math.max(...LOGO_STANDARD.map((l) => l.length));
+const LOGO_SMALL_WIDTH = Math.max(...LOGO_SMALL.map((l) => l.length));
+
+export function Welcome({
   width,
   cwd,
   model,
-  mode,
-  compact,
 }: {
   width: number;
   cwd: string;
   model: string;
-  mode: AppMode;
-  compact: boolean;
 }) {
   const safeWidth = Math.max(20, width);
-  const modeLabel = mode === "build" ? "BUILD" : "PLAN";
-  const modeColor = mode === "build" ? COLOR.accent : COLOR.warning;
 
-  if (compact) {
-    const right = `v${VERSION}  ${modeLabel}`;
-    const brandBudget = Math.max(7, safeWidth - right.length - 2);
-    return (
-      <Box flexDirection="column" width={safeWidth} height={3} flexShrink={0}>
-        <Box width={safeWidth} justifyContent="space-between">
-          <Text color={COLOR.accent} bold>
-            {truncate("CODEJET", brandBudget)}
-          </Text>
-          <Text wrap="truncate-end">
-            <Text color={COLOR.muted}>v{VERSION}  </Text>
-            <Text color={modeColor} bold>
-              {modeLabel}
-            </Text>
-          </Text>
-        </Box>
-        <Text color={COLOR.textDim} wrap="truncate-end">
-          {truncate(`${model}  |  ${cwd}`, safeWidth)}
-        </Text>
-        <Text color={COLOR.border}>{rule(safeWidth)}</Text>
-      </Box>
-    );
-  }
-
-  if (safeWidth >= 100) {
-    const detailsWidth = Math.max(20, safeWidth - LOGO_WIDTH - 4);
-    return (
-      <Box flexDirection="column" width={safeWidth} height={5} flexShrink={0}>
-        <Box flexDirection="row" width={safeWidth} height={4}>
-          <Box flexDirection="column" width={LOGO_WIDTH} flexShrink={0}>
-            {LOGO_LINES.map((line, index) => (
-              <Text key={index} color={COLOR.accent} bold>
-                {line}
-              </Text>
-            ))}
-          </Box>
-          <Box
-            flexDirection="column"
-            width={detailsWidth}
-            paddingLeft={3}
-            justifyContent="center"
-          >
-            <Text wrap="truncate-end">
-              <Text color={modeColor} bold>
-                {modeLabel}
-              </Text>
-              <Text color={COLOR.muted}>  v{VERSION}</Text>
-            </Text>
-            <Text color={COLOR.text} wrap="truncate-end">
-              {truncate(model, detailsWidth - 3)}
-            </Text>
-            <Text color={COLOR.textDim} wrap="truncate-end">
-              {truncate(cwd, detailsWidth - 3)}
-            </Text>
-          </Box>
-        </Box>
-        <Text color={COLOR.border}>{rule(safeWidth)}</Text>
-      </Box>
-    );
-  }
+  // Pick the largest wordmark that fits with a little breathing room.
+  const logo =
+    safeWidth >= LOGO_STANDARD_WIDTH + 4
+      ? LOGO_STANDARD
+      : safeWidth >= LOGO_SMALL_WIDTH + 4
+        ? LOGO_SMALL
+        : null;
 
   return (
-    <Box flexDirection="column" width={safeWidth} height={5} flexShrink={0}>
-      {LOGO_LINES.map((line, index) => (
-        <Text key={index} color={COLOR.accent} bold wrap="truncate-end">
-          {truncate(line, safeWidth)}
+    <Box flexDirection="column" width={safeWidth}>
+      <Box height={1} />
+      {logo ? (
+        logo.map((line, index) => (
+          <Text key={index} color={COLOR.accent} bold wrap="truncate-end">
+            {truncate(line, safeWidth)}
+          </Text>
+        ))
+      ) : (
+        <Text color={COLOR.accent} bold>
+          CODE JET
         </Text>
-      ))}
+      )}
+      <Box height={1} />
       <Text wrap="truncate-end">
-        <Text color={modeColor} bold>
-          {modeLabel}
-        </Text>
-        <Text color={COLOR.muted}>
-          {"  "}v{VERSION}{"  |  "}
-        </Text>
-        <Text color={COLOR.textDim}>
-          {truncate(
-            `${model}  |  ${cwd}`,
-            Math.max(0, safeWidth - modeLabel.length - 12),
-          )}
-        </Text>
+        <Text color={COLOR.muted}>v{VERSION}</Text>
+        <Text color={COLOR.textDim}>{"  ·  "}{truncate(model, Math.max(8, safeWidth - 12))}</Text>
       </Text>
+      <Text color={COLOR.muted} dimColor wrap="truncate-end">
+        {truncate(cwd, safeWidth)}
+      </Text>
+      <Box height={1} />
     </Box>
   );
 }

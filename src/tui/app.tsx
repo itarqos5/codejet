@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { Box, Static, Text, useApp } from "ink";
 
-import { AppHeader } from "./components/header.js";
+import { Welcome } from "./components/header.js";
 import { MessageView, LiveMessage, EmptyState } from "./components/chat.js";
 import { PromptInput } from "./components/input.js";
 import { StatusBar } from "./components/statusbar.js";
@@ -40,7 +40,9 @@ import type { SessionError } from "../api/logger.js";
  *    the viewport cannot be diffed correctly and tears.
  */
 
-type StaticEntry = { key: string; kind: "message"; message: ChatMessage };
+type StaticEntry =
+  | { key: string; kind: "welcome" }
+  | { key: string; kind: "message"; message: ChatMessage };
 
 export default function App() {
   const [state, dispatch] = useReducer(appReducer, INITIAL_STATE);
@@ -171,20 +173,16 @@ export default function App() {
 
   // ── Static transcript ───────────────────────────────────────
   const staticEntries = useMemo<StaticEntry[]>(
-    () =>
-      state.messages.map<StaticEntry>((message) => ({
+    () => [
+      { key: "welcome", kind: "welcome" },
+      ...state.messages.map<StaticEntry>((message) => ({
         key: message.id,
         kind: "message",
         message,
       })),
+    ],
     [state.messages],
   );
-
-  // ── Header density ──────────────────────────────────────────
-  // The brand header is part of the live frame (not the static transcript) so
-  // it stays pinned on screen and can react to mode changes and resizes.
-  const headerCompact = width < 80;
-  const headerRows = headerCompact ? 3 : 5;
 
   // ── Live region sizing ──────────────────────────────────────
   const freeTextQuestion = !!state.pendingQuestion && !state.pendingQuestion.options?.length;
@@ -202,7 +200,6 @@ export default function App() {
   const todoRows = state.todos.length > 0 ? Math.min(state.todos.length, 6) + 3 : 0;
 
   const reservedRows =
-    headerRows +
     3 + // prompt box
     1 + // status bar
     (state.thinking ? 2 : 0) +
@@ -241,21 +238,18 @@ export default function App() {
   return (
     <Box flexDirection="column" width={width}>
       <Static key={transcriptGeneration} items={staticEntries}>
-        {(entry) => (
-          <Box key={entry.key} flexDirection="column" width={width} marginBottom={1}>
-            <MessageView message={entry.message} width={width} />
-          </Box>
-        )}
+        {(entry) =>
+          entry.kind === "welcome" ? (
+            <Welcome key={entry.key} width={width} cwd={process.cwd()} model={modelName} />
+          ) : (
+            <Box key={entry.key} flexDirection="column" width={width} marginBottom={1}>
+              <MessageView message={entry.message} width={width} />
+            </Box>
+          )
+        }
       </Static>
 
       <Box flexDirection="column" width={width}>
-        <AppHeader
-          width={width}
-          cwd={process.cwd()}
-          model={modelName}
-          mode={state.mode}
-          compact={headerCompact}
-        />
 
         {state.messages.length === 0 && !state.streaming && <EmptyState width={width} />}
 
