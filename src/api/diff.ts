@@ -34,7 +34,12 @@ const MAX_LCS_CELLS = 2_000_000;
 
 function splitLines(text: string): string[] {
   if (text === "") return [];
-  return text.replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n");
+  const lines = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n");
+  // A trailing newline terminates the last line rather than starting a new,
+  // empty one. Keeping it added a phantom blank "+" row to every diff of a
+  // normally-terminated file, inflating the added count by one.
+  if (lines.length > 0 && lines[lines.length - 1] === "") lines.pop();
+  return lines;
 }
 
 /** Longest-common-subsequence backtrace over whole lines. */
