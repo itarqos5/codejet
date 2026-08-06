@@ -5,7 +5,8 @@ import { ThoughtBlock } from "./thinking.js";
 import { Spinner } from "./spinner.js";
 import { Row } from "./row.js";
 import { FileChangeView } from "./file-change.js";
-import { COLOR, GLYPH, truncate } from "../theme.js";
+import { COLOR, GLYPH } from "../theme.js";
+import { toolLabel, toolTarget } from "../format.js";
 import type { ChatMessage, FileEdit } from "../state.js";
 
 /**
@@ -91,38 +92,50 @@ export function ActiveToolRow({
   detail?: string;
   width: number;
 }) {
+  const label = toolLabel(name, "active");
+  const target = toolTarget(name, detail ?? "", Math.max(0, width - INDENT - label.length - 2));
+
   return (
     <Box flexDirection="row" width={width}>
       <Box width={INDENT} flexShrink={0}>
         <Spinner color={COLOR.tool} />
       </Box>
       <Text wrap="truncate-end">
-        <Text color={COLOR.tool}>{name}</Text>
-        {detail ? (
-          <Text color={COLOR.textDim}>
-            {" "}
-            {truncate(detail, Math.max(0, width - INDENT - name.length - 2))}
-          </Text>
-        ) : null}
+        <Text color={COLOR.tool}>{label}</Text>
+        {target ? <Text color={COLOR.textDim}> {target}</Text> : null}
       </Text>
     </Box>
   );
 }
 
+/**
+ * A finished tool call.
+ *
+ * The verb and its target read as one phrase on the left — "Read src/app.tsx" —
+ * because splitting them across the row's two columns pushed the file name to
+ * the far right where it read as unrelated to the action.
+ */
 function ToolMessage({ message, width }: { message: ChatMessage; width: number }) {
   const status = message.toolStatus ?? "done";
-  const color = status === "error" ? COLOR.error : COLOR.success;
+  const isError = status === "error";
   const name = message.toolName ?? "tool";
-  const detail = message.toolDetail ?? "";
+  const label = toolLabel(name, "done");
+  const value = isError ? "failed" : "";
+
+  const target = toolTarget(
+    name,
+    message.toolDetail ?? "",
+    Math.max(0, width - INDENT - 2 - label.length - 2 - (value ? value.length + 2 : 0)),
+  );
 
   return (
     <Row
-      glyph={status === "error" ? GLYPH.toolFail : GLYPH.toolDone}
-      glyphColor={color}
-      label={name}
-      labelColor={COLOR.text}
-      value={detail}
-      valueColor={status === "error" ? COLOR.error : COLOR.muted}
+      glyph={isError ? GLYPH.toolFail : GLYPH.toolDone}
+      glyphColor={isError ? COLOR.error : COLOR.success}
+      label={target ? `${label}  ${target}` : label}
+      labelColor={isError ? COLOR.textDim : COLOR.text}
+      value={value}
+      valueColor={COLOR.error}
       width={width}
     />
   );
@@ -253,8 +266,32 @@ export function EmptyState({ width }: { width: number }) {
   return (
     <Box flexDirection="column" width={width}>
       <Text color={COLOR.muted} dimColor wrap="truncate-end">
-        Ask a question, describe a change, or press ctrl+p for commands.
+        Ask a question, or describe a change to make.
       </Text>
     </Box>
   );
+}
+
+/**
+ * Blank rows around a transcript entry.
+ *
+ * Activity rows are a list and read best packed tight; a blank line after every
+ * single one — which is what a blanket marginBottom produced — doubled the
+ * height of a run of tool calls and buried the turn it belonged to. Only the
+ * conversation itself gets breathing room.
+ */
+export function messageSpacing(message: ChatMessage): { top: number; bottom: number } {
+  switch (message.role) {
+    case "user":
+      return { top: 0, bottom: 1 };
+    case "assistant":
+      return { top: 1, bottom: 1 };
+    case "file-change":
+      // A diff is a block, not a row, so it needs separating from what follows.
+      return { top: 0, bottom: message.fileEdit?.diff?.length ? 1 : 0 };
+    case "system":
+      return { top: 1, bottom: 1 };
+    default:
+      return { top: 0, bottom: 0 };
+  }
 }
