@@ -55,6 +55,10 @@ export const GLYPH = {
   bullet: "•",
   quote: "▏",
   gutter: "▏",
+  /** Column separator inside a diff block. */
+  pipe: "│",
+  /** Marks lines skipped between two hunks of the same diff. */
+  hunk: "⋯",
   prompt: "❯",
   added: "+",
   removed: "-",

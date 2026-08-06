@@ -18,6 +18,8 @@ export interface FileChange {
 export interface FileEdit {
   path: string;
   action: "created" | "modified" | "deleted";
+  /** Directories carry no diff and must not be summarised as "no changes". */
+  kind?: "file" | "directory";
   added?: number;
   removed?: number;
   diff?: DiffLine[];
@@ -178,24 +180,24 @@ export function appReducer(state: AppState, action: AppAction): AppState {
       // every transient indicator so the frame cannot be left mid-animation.
       return action.streaming
         ? {
-            ...state,
-            streaming: true,
-            cancelPending: false,
-            thinking: true,
-            thinkingSince: Date.now(),
-            thinkingText: "",
-            activityLabel: "Thinking",
-          }
+          ...state,
+          streaming: true,
+          cancelPending: false,
+          thinking: true,
+          thinkingSince: Date.now(),
+          thinkingText: "",
+          activityLabel: "Thinking",
+        }
         : {
-            ...state,
-            streaming: false,
-            cancelPending: false,
-            thinking: false,
-            thinkingSince: null,
-            streamingContent: "",
-            activityLabel: "",
-            activeTool: null,
-          };
+          ...state,
+          streaming: false,
+          cancelPending: false,
+          thinking: false,
+          thinkingSince: null,
+          streamingContent: "",
+          activityLabel: "",
+          activeTool: null,
+        };
 
     case "SET_STREAMING_CONTENT":
       // Visible output means the model is no longer purely thinking.
