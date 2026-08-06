@@ -2,14 +2,19 @@ import React, { useCallback, useEffect, useMemo, useReducer, useRef, useState } 
 import { Box, Static, Text, useApp } from "ink";
 
 import { Welcome } from "./components/header.js";
-import { MessageView, LiveMessage, EmptyState, ActiveToolRow } from "./components/chat.js";
+import {
+  MessageView,
+  LiveMessage,
+  EmptyState,
+  ActiveToolRow,
+  messageSpacing,
+} from "./components/chat.js";
 import { PromptInput } from "./components/input.js";
 import { StatusBar } from "./components/statusbar.js";
 import { CommandPalette, ModelPalette, buildCommands } from "./components/modal.js";
 import { TodoPanel } from "./components/todo.js";
 import { QuestionPrompt } from "./components/question.js";
 import { PlanPrompt } from "./components/plan-prompt.js";
-import { FileNotification } from "./components/file-notification.js";
 import { UpdateToast } from "./components/update-toast.js";
 import { UpdatePanel } from "./components/update-modal.js";
 import { ThinkingIndicator } from "./components/thinking.js";
@@ -52,9 +57,15 @@ export default function App() {
   const [palette, setPalette] = useState<PaletteMode>("none");
   const [paletteIndex, setPaletteIndex] = useState(0);
   const [questionIndex, setQuestionIndex] = useState(0);
-  const [fileNotifications, setFileNotifications] = useState<
-    { filePath: string; action: "created" | "modified" | "deleted" }[]
-  >([]);
+
+  /**
+   * Rows the prompt currently occupies, reported by the prompt itself.
+   *
+   * The prompt grows as the user types, and the live frame must stay shorter
+   * than the terminal or ink cannot diff it. Assuming a fixed single row meant
+   * a long message silently pushed the frame past the bottom of the screen.
+   */
+  const [promptRows, setPromptRows] = useState(1);
 
   /**
    * Remount key for <Static>. Ink only emits items appended past the highest
@@ -85,19 +96,12 @@ export default function App() {
           if (info) dispatch({ type: "SET_UPDATE_AVAILABLE", version: info.version });
         }),
       )
-      .catch(() => {});
+      .catch(() => { });
 
     loadTodos()
       .then((todos) => dispatch({ type: "SET_TODOS", todos }))
-      .catch(() => {});
+      .catch(() => { });
   }, []);
-
-  // Transient notices expire on their own.
-  useEffect(() => {
-    if (fileNotifications.length === 0) return;
-    const timer = setTimeout(() => setFileNotifications([]), 4000);
-    return () => clearTimeout(timer);
-  }, [fileNotifications.length]);
 
   useEffect(() => {
     if (!state.error) return;
@@ -113,7 +117,6 @@ export default function App() {
     state,
     dispatch,
     sessionErrors,
-    setFileNotifications,
     abortControllerRef,
   });
 
@@ -133,7 +136,7 @@ export default function App() {
         case "todos":
           loadTodos()
             .then((todos) => dispatch({ type: "SET_TODOS", todos }))
-            .catch(() => {});
+            .catch(() => { });
           break;
 
         case "install-update":
@@ -219,13 +222,12 @@ export default function App() {
   const todoRows = state.todos.length > 0 ? Math.min(state.todos.length, 6) + 3 : 0;
 
   const reservedRows =
-    3 + // prompt box
+    promptRows + 2 + // prompt box: its rows plus a border above and below
     1 + // status bar
     // Thinking indicator is a header row plus up to 2 dimmed detail rows.
     (state.thinking ? 3 : 0) +
     (state.activeTool ? 1 : 0) +
     (state.error ? 1 : 0) +
-    fileNotifications.length +
     paletteRows +
     questionRows +
     (state.pendingPlan ? 4 : 0) +
@@ -263,7 +265,13 @@ export default function App() {
           entry.kind === "welcome" ? (
             <Welcome key={entry.key} width={width} cwd={process.cwd()} model={modelName} />
           ) : (
-            <Box key={entry.key} flexDirection="column" width={width} marginBottom={1}>
+            <Box
+              key={entry.key}
+              flexDirection="column"
+              width={width}
+              marginTop={messageSpacing(entry.message).top}
+              marginBottom={messageSpacing(entry.message).bottom}
+            >
               <MessageView message={entry.message} width={width} />
             </Box>
           )
@@ -302,10 +310,6 @@ export default function App() {
             width={width}
           />
         )}
-
-        {fileNotifications.map((n, i) => (
-          <FileNotification key={`${n.filePath}-${i}`} filePath={n.filePath} action={n.action} width={width} />
-        ))}
 
         {state.error && (
           <Box width={width}>
@@ -363,6 +367,7 @@ export default function App() {
           busy={state.streaming && !freeTextQuestion}
           width={width}
           onSubmit={onSubmit}
+          onRowsChange={setPromptRows}
         />
 
         <StatusBar

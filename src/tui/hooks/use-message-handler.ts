@@ -56,20 +56,20 @@ type FileAction = "created" | "modified" | "deleted";
 
 function fileMutationFor(
   toolName: string,
-): { action: FileAction; trackLines: boolean } | null {
+): { action: FileAction; trackLines: boolean; kind: "file" | "directory" } | null {
   switch (toolName) {
     case "write":
-      return { action: "modified", trackLines: true };
+      return { action: "modified", trackLines: true, kind: "file" };
     case "edit":
-      return { action: "modified", trackLines: true };
+      return { action: "modified", trackLines: true, kind: "file" };
     case "create_file":
-      return { action: "created", trackLines: true };
+      return { action: "created", trackLines: true, kind: "file" };
     case "create_directory":
-      return { action: "created", trackLines: false };
+      return { action: "created", trackLines: false, kind: "directory" };
     case "delete_file":
-      return { action: "deleted", trackLines: false };
+      return { action: "deleted", trackLines: false, kind: "file" };
     case "delete_directory":
-      return { action: "deleted", trackLines: false };
+      return { action: "deleted", trackLines: false, kind: "directory" };
     default:
       return null;
   }
@@ -120,9 +120,6 @@ export interface MessageHandlerDeps {
   state: AppState;
   dispatch: React.Dispatch<any>;
   sessionErrors: React.MutableRefObject<SessionError[]>;
-  setFileNotifications: React.Dispatch<
-    React.SetStateAction<{ filePath: string; action: "created" | "modified" | "deleted" }[]>
-  >;
   abortControllerRef: React.MutableRefObject<AbortController | null>;
 }
 
@@ -130,7 +127,6 @@ export function useMessageHandler({
   state,
   dispatch,
   sessionErrors,
-  setFileNotifications,
   abortControllerRef,
 }: MessageHandlerDeps) {
   const currentModel = getModelById(state.modelId);
@@ -248,22 +244,10 @@ export function useMessageHandler({
         });
       } finally {
         abortControllerRef.current = null;
-        // Collapse the turn's reasoning into a single transcript line. The
-        // thought text itself was only ever shown in the live indicator.
-        if (thinkingRef.current.seen) {
-          const end = thinkingRef.current.endedAt ?? Date.now();
-          dispatch({
-            type: "ADD_MESSAGE",
-            message: {
-              id: genId(),
-              role: "thinking",
-              content: "",
-              thinkingMs: Math.max(0, end - thinkingRef.current.since),
-              timestamp: Date.now(),
-            },
-          });
-        }
-        thinkingRef.current = { seen: false, since: 0, endedAt: null, text: "" };
+        // Covers turns that ended without an answer — aborted, failed, or
+        // tool-only. A completed turn has already flushed, and flushing is
+        // idempotent, so this cannot duplicate the entry.
+        flushThinking();
         dispatch({ type: "SET_STREAMING", streaming: false });
       }
     },
@@ -324,8 +308,18 @@ export function useMessageHandler({
       tool: { name: toolName, detail: toolDetail(args, "") },
     });
 
-    const finishActivity = (content: string, isError: boolean) => {
+    /**
+     * Clears the in-flight row and, unless the call has already been reported
+     * in more detail, appends the finished row.
+     *
+     * `silent` exists because a file write used to be announced three times:
+     * once as a generic tool row, once as a file-change entry with its diff,
+     * and once more as a transient toast. The diff entry is strictly the most
+     * informative of the three, so it wins.
+     */
+    const finishActivity = (content: string, isError: boolean, silent = false) => {
       dispatch({ type: "SET_ACTIVE_TOOL", tool: null });
+      if (silent && !isError) return;
       dispatch({
         type: "ADD_MESSAGE",
         message: {
@@ -425,18 +419,23 @@ export function useMessageHandler({
         );
         const isError = !!result.isError || /^error:/i.test(result.content);
 
+        // Set when the write has been reported as a file-change entry, so the
+        // generic tool row can be skipped rather than repeating it.
+        let reportedAsFileChange = false;
+
         if (isError) {
           logger.error(toolName, result.content);
         } else if (mutation && path) {
           const action = toolName === "write" && !existedBefore ? "created" : mutation.action;
 
-          let fileEdit: FileEdit = { path, action };
+          let fileEdit: FileEdit = { path, action, kind: mutation.kind };
           if (mutation.trackLines) {
             const after = readFileSafe(path);
             const diff = diffLines(before, after, { maxLines: 12, context: 1 });
             fileEdit = {
               path,
               action,
+              kind: mutation.kind,
               added: diff.added,
               removed: diff.removed,
               diff: diff.lines,
@@ -445,7 +444,6 @@ export function useMessageHandler({
             fileChanges.push({ path, added: diff.added, removed: diff.removed });
           }
 
-          setFileNotifications((prev) => [...prev, { filePath: path, action }]);
           dispatch({
             type: "ADD_MESSAGE",
             message: {
@@ -458,9 +456,10 @@ export function useMessageHandler({
               timestamp: Date.now(),
             },
           });
+          reportedAsFileChange = true;
         }
 
-        finishActivity(result.content, isError);
+        finishActivity(result.content, isError, reportedAsFileChange);
 
         if (!isError && toolName === "todo") {
           dispatch({ type: "SET_TODOS", todos: await loadTodos() });
@@ -568,7 +567,7 @@ export function useMessageHandler({
           }
         }
       } finally {
-        reader.cancel().catch(() => {});
+        reader.cancel().catch(() => { });
       }
 
       visibleContent += iterationText;
@@ -610,6 +609,9 @@ export function useMessageHandler({
     }
 
     if (visibleContent.trim()) {
+      // Before the answer: the thought produced it, so it reads as a preamble
+      // rather than an afterthought tacked on below the reply.
+      flushThinking();
       dispatch({
         type: "ADD_MESSAGE",
         message: {
@@ -645,11 +647,11 @@ export function useMessageHandler({
           const detail = serverErr ? `\n\nServer error: ${serverErr}` : "";
           throw new Error(
             "Could not connect to the OpenCode server.\n\n" +
-              "Things to try:\n" +
-              "- Make sure `opencode` is installed and on PATH\n" +
-              "- Run `opencode serve` manually in another terminal\n" +
-              "- Press ctrl+p and switch to a KiloCode model" +
-              detail,
+            "Things to try:\n" +
+            "- Make sure `opencode` is installed and on PATH\n" +
+            "- Run `opencode serve` manually in another terminal\n" +
+            "- Press ctrl+p and switch to a KiloCode model" +
+            detail,
           );
         }
       }
@@ -717,6 +719,7 @@ export function useMessageHandler({
       throw new Error(`OpenCode did not return a response from ${ocModel} within 120 seconds.`);
     }
 
+    flushThinking();
     dispatch({
       type: "ADD_MESSAGE",
       message: {
