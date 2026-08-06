@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { Box, Text, useInput } from "ink";
 import { COLOR, GLYPH } from "../theme.js";
 import type { AppMode } from "../state.js";
@@ -46,6 +46,7 @@ export function PromptInput({
   busy,
   width,
   onSubmit,
+  onRowsChange,
 }: {
   mode: AppMode;
   /** Input is not accepting keys (modal open, question pending). */
@@ -54,6 +55,12 @@ export function PromptInput({
   busy: boolean;
   width: number;
   onSubmit: (value: string) => void;
+  /**
+   * Reports how many rows the text currently wraps to. The parent sizes the
+   * live frame against the terminal height, and only the prompt knows how far
+   * it has grown.
+   */
+  onRowsChange?: (rows: number) => void;
 }) {
   const [value, setValue] = useState("");
   const [cursor, setCursor] = useState(0);
@@ -147,6 +154,15 @@ export function PromptInput({
   const before = display.slice(0, displayCursor);
   const atCursor = display.slice(displayCursor, displayCursor + 1) || " ";
   const after = display.slice(displayCursor + 1);
+
+  // Two cells of the first row are taken by the prompt glyph. The trailing
+  // cursor cell can itself push onto a new row, hence the +1.
+  const textWidth = Math.max(4, contentWidth - 2);
+  const rows = Math.min(MAX_ROWS, Math.max(1, Math.ceil((display.length + 1) / textWidth)));
+
+  useEffect(() => {
+    onRowsChange?.(rows);
+  }, [rows, onRowsChange]);
 
   const placeholder = busy
     ? "Working… type your next message or press esc to interrupt"
